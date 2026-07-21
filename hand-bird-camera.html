@@ -686,6 +686,40 @@ let faceDetector = null;
 let lastVideoTime = -1;
 let running = false;
 
+// 화면 방향에 맞는 해상도를 요청해서 카메라를 염
+// (세로 화면에 가로 영상이 오면 시야가 옆으로 넓은 채 확대되는 문제 방지)
+async function openCamera() {
+  if (video.srcObject) video.srcObject.getTracks().forEach((t) => t.stop());
+  const portrait = window.innerHeight >= window.innerWidth;
+  const dims = portrait
+    ? { width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } }
+    : { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user", ...dims },
+    audio: false,
+  });
+  // 그래도 세로 화면에 가로 영상이 왔으면 소스 크롭을 다시 요청 (지원 브라우저만)
+  const track = stream.getVideoTracks()[0];
+  const st = track.getSettings();
+  if (portrait && st.width > st.height) {
+    try { await track.applyConstraints({ aspectRatio: 9 / 16 }); } catch (e) {}
+  }
+  video.srcObject = stream;
+  await new Promise((res) => (video.onloadedmetadata = res));
+  await video.play();
+  updateCrop();
+}
+
+// 기기 회전 시 방향에 맞춰 카메라를 다시 염
+window.addEventListener("resize", () => {
+  if (!running) return;
+  updateCrop();
+});
+window.addEventListener("orientationchange", () => {
+  if (!running) return;
+  setTimeout(() => openCamera().catch(() => {}), 300);
+});
+
 async function init() {
   try {
     if (!handLandmarker) {
@@ -718,21 +752,14 @@ async function init() {
 
   try {
     setStatus("카메라 켜는 중...");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 1280 } },
-      audio: false,
-    });
-    video.srcObject = stream;
-    await new Promise((res) => (video.onloadedmetadata = res));
-    await video.play();
+    await openCamera();
   } catch (e) {
     setStatus("카메라 권한이 필요합니다: " + e.message);
     return;
   }
 
-  // 카메라가 가로 영상을 줘도 화면 비율에 맞게 크롭 (좌표 계산은 항상 캔버스 픽셀 기준)
+  // 좌표 계산은 항상 캔버스 픽셀 기준 (CSS 크기와 다름)
   updateCrop();
-  window.addEventListener("resize", updateCrop);
 
   setStatus("손바닥이나 얼굴을 카메라에 보여주세요 ✋", false);
   setTimeout(() => statusEl.classList.add("hidden"), 2500);
