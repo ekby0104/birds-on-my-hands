@@ -710,14 +710,10 @@ async function openCamera() {
   updateCrop();
 }
 
-// 기기 회전 시 방향에 맞춰 카메라를 다시 염
+// 기기 회전/창 크기 변경 시 크롭만 다시 계산.
+// iOS는 회전하면 기존 스트림을 알아서 돌려주므로 카메라를 다시 열면 안 됨 (멈춤 원인)
 window.addEventListener("resize", () => {
-  if (!running) return;
-  updateCrop();
-});
-window.addEventListener("orientationchange", () => {
-  if (!running) return;
-  setTimeout(() => openCamera().catch(() => {}), 300);
+  if (running) updateCrop();
 });
 
 async function init() {
@@ -794,8 +790,16 @@ function updateCrop() {
   if (canvas.height !== ch) canvas.height = ch;
 }
 
+let lastVW = 0, lastVH = 0;
+
 function loop() {
   if (!running) return;
+  // 회전 시 iOS가 스트림 해상도를 스왑해주므로, 바뀐 걸 감지하면 크롭 재계산
+  if (video.videoWidth !== lastVW || video.videoHeight !== lastVH) {
+    lastVW = video.videoWidth;
+    lastVH = video.videoHeight;
+    updateCrop();
+  }
   // 비디오의 크롭 영역을 셀피 모드로 좌우반전해서 그림
   ctx.save();
   ctx.scale(-1, 1);
