@@ -353,9 +353,12 @@ document.getElementById("eyeDone").addEventListener("click", () => {
   eyeModal.classList.remove("open");
 });
 
-// 눈 주변 색을 링 샘플링해서 감은 눈 덮개 색으로 사용
+// 눈 주변 색을 샘플링해서 감은 눈 덮개 색으로 사용.
+// 평균을 쓰면 외곽선(검정)과 바탕이 섞여 눈마다 색이 달라지므로,
+// 모든 눈 주변 샘플을 합쳐 최빈색(가장 많이 나오는 색)을 뽑아 두 눈에 똑같이 적용
 function sampleEyeColors(pair) {
   const img = pair.img;
+  if (pair.eyes.length === 0) return;
   const S = 256;
   const ar = img.naturalWidth / img.naturalHeight;
   const w = ar >= 1 ? S : Math.round(S * ar);
@@ -365,23 +368,34 @@ function sampleEyeColors(pair) {
   const cc = cnv.getContext("2d");
   cc.drawImage(img, 0, 0, w, h);
   const data = cc.getImageData(0, 0, w, h).data;
+
+  const R = 0.09 * Math.max(w, h);
+  const buckets = new Map(); // 양자화한 색 → { count, r, g, b }
   for (const eye of pair.eyes) {
     const ex = eye.x * w, ey = eye.y * h;
-    const rOut = 0.09 * Math.max(w, h) * 1.5;
-    let r = 0, g = 0, b = 0, n = 0;
-    for (let a = 0; a < 32; a++) {
-      const ang = (a / 32) * Math.PI * 2;
-      const px = Math.round(ex + Math.cos(ang) * rOut);
-      const py = Math.round(ey + Math.sin(ang) * rOut);
-      if (px < 0 || py < 0 || px >= w || py >= h) continue;
-      const o = (py * w + px) * 4;
-      if (data[o + 3] < 40) continue;
-      r += data[o]; g += data[o + 1]; b += data[o + 2]; n++;
+    for (const mul of [1.25, 1.6, 2.0]) {
+      for (let a = 0; a < 24; a++) {
+        const ang = (a / 24) * Math.PI * 2;
+        const px = Math.round(ex + Math.cos(ang) * R * mul);
+        const py = Math.round(ey + Math.sin(ang) * R * mul);
+        if (px < 0 || py < 0 || px >= w || py >= h) continue;
+        const o = (py * w + px) * 4;
+        if (data[o + 3] < 40) continue;
+        const key = `${data[o] >> 5},${data[o + 1] >> 5},${data[o + 2] >> 5}`;
+        const bk = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+        bk.count++; bk.r += data[o]; bk.g += data[o + 1]; bk.b += data[o + 2];
+        buckets.set(key, bk);
+      }
     }
-    eye.color = n > 0
-      ? `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`
-      : "#fdf8e4";
   }
+  let best = null;
+  for (const bk of buckets.values()) {
+    if (!best || bk.count > best.count) best = bk;
+  }
+  const color = best
+    ? `rgb(${Math.round(best.r / best.count)},${Math.round(best.g / best.count)},${Math.round(best.b / best.count)})`
+    : "#fdf8e4";
+  for (const eye of pair.eyes) eye.color = color;
 }
 
 // 감은 눈 그리기: 주변 색으로 덮고 가로선. (dx, dy)는 이미지 좌상단 좌표
