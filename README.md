@@ -15,7 +15,8 @@
 
 | 역할 | 기술 |
 |---|---|
-| 손 인식 | MediaPipe Hand Landmarker (`@mediapipe/tasks-vision@0.10.14`, CDN import, GPU delegate, VIDEO 모드, numHands: 2) |
+| 손 인식 | MediaPipe Hand Landmarker (`@mediapipe/tasks-vision@0.10.14`, CDN import, GPU delegate, VIDEO 모드, numHands: 4) |
+| 얼굴 인식 | MediaPipe Face Detector (blaze_face_short_range) — 박스 윗변 중앙 = 정수리 |
 | 카메라 | `getUserMedia` (facingMode: user, 720x1280) |
 | 렌더링 | Canvas 2D — 매 프레임 비디오를 좌우반전으로 그린 뒤 그 위에 새를 벡터로 직접 드로잉 |
 | 녹화 | `MediaRecorder` + `canvas.captureStream(30)` → webm (vp9 우선, Safari는 mp4 폴백) 다운로드 |
@@ -30,8 +31,11 @@
 - **손그림 애니메이션 느낌**: 애니메이션 시간을 83ms 단위로 양자화해 12fps처럼 뚝뚝 끊기게 함
   - 위아래 bob (sin), 좌우 tilt (sin), 주기적 눈 깜빡임(blink)
 - **새 드로잉**: bezierCurve로 물방울형 몸통(크림색 #fdf8e4 + 굵은 외곽선 #1a1712), 흰 눈 2개, 주황 삼각 부리
-- **양손 지원**: birds 배열 2개, 각각 phase를 다르게 줘서 움직임이 어긋나게 함
-- **손 미검출 시**: `b.active = false`로 즉시 숨김
+- **다중 지원**: 손바닥 슬롯 4개 + 정수리 슬롯 4개, 각각 phase를 다르게 줘서 움직임이 어긋나게 함
+- **미검출 시**: `slot.active = false`로 즉시 숨김
+- **정수리 계란**: Face Detector 박스 윗변 중앙에 깨진 계란(껍데기+노른자)을 벡터로 드로잉
+- **손그림 등록**: 시작 화면에서 이미지 업로드 + 부위(손바닥/정수리) 선택을 여러 페어 등록 가능.
+  등록된 부위는 기본 그림 대신 해당 이미지를 드로잉 (같은 부위 여러 장이면 슬롯 인덱스로 순환 배정)
 
 ## 다음 작업 후보
 
