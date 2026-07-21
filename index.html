@@ -673,6 +673,7 @@ const lerp = (a, b, k) => a + (b - a) * k;
 function makeSlots(n) {
   return Array.from({ length: n }, (_, i) => ({
     active: false, x: 0, y: 0, size: 0,
+    fist: 0, // 0=편 손, 1=주먹 (부드럽게 전환)
     phase: i * 1.7, // 슬롯마다 phase를 다르게 줘서 움직임이 어긋나게
   }));
 }
@@ -706,10 +707,14 @@ function drawBird(c, b) {
   const tilt = Math.sin(qt * 1.7 + b.phase) * 0.07;
   const blinkCycle = (qt * 1000 + b.phase * 500) % 2700;
   const blink = blinkCycle < 130;
+  const sq = b.fist || 0; // 주먹 쥐면 1: 쪼그라들며 찡그림
 
   c.save();
-  c.translate(b.x, b.y + bob);
-  c.rotate(tilt);
+  c.translate(b.x, b.y + bob + s * 0.2 * sq);
+  c.rotate(tilt * (1 - sq));
+  // 쪼그라짐: 전체 축소 + 옆으로 퍼지는 찌부 효과
+  const shrink = 1 - 0.22 * sq;
+  c.scale(shrink * (1 + 0.22 * sq), shrink * (1 - 0.28 * sq));
 
   c.lineWidth = Math.max(2.5, s * 0.11);
   c.lineJoin = "round";
@@ -746,25 +751,40 @@ function drawBird(c, b) {
   c.fill();
   c.stroke();
 
-  // 눈 2개 (깜빡일 땐 가로선)
+  // 눈 2개 (주먹이면 >< 찡그림, 아니면 깜빡임/뜬 눈)
   const eyeY = -h * 0.30;
   const eyeR = s * 0.16;
-  for (const ex of [-w * 0.16, w * 0.14]) {
-    if (blink) {
+  if (sq > 0.5) {
+    // 찡그린 눈 >< + 미간 주름
+    for (const [ex, dir] of [[-w * 0.16, 1], [w * 0.14, -1]]) {
       c.beginPath();
-      c.moveTo(ex - eyeR, eyeY);
-      c.lineTo(ex + eyeR, eyeY);
+      c.moveTo(ex - dir * eyeR, eyeY - eyeR * 0.8);
+      c.lineTo(ex + dir * eyeR * 0.6, eyeY);
+      c.lineTo(ex - dir * eyeR, eyeY + eyeR * 0.8);
       c.stroke();
-    } else {
-      c.beginPath();
-      c.ellipse(ex, eyeY, eyeR, eyeR * 1.1, 0, 0, Math.PI * 2);
-      c.fillStyle = "#ffffff";
-      c.fill();
-      c.stroke();
-      c.beginPath();
-      c.arc(ex + eyeR * 0.2, eyeY, eyeR * 0.42, 0, Math.PI * 2);
-      c.fillStyle = "#1a1712";
-      c.fill();
+    }
+    c.beginPath();
+    c.moveTo(-w * 0.04, eyeY - eyeR * 1.5);
+    c.lineTo(w * 0.02, eyeY - eyeR * 0.9);
+    c.stroke();
+  } else {
+    for (const ex of [-w * 0.16, w * 0.14]) {
+      if (blink) {
+        c.beginPath();
+        c.moveTo(ex - eyeR, eyeY);
+        c.lineTo(ex + eyeR, eyeY);
+        c.stroke();
+      } else {
+        c.beginPath();
+        c.ellipse(ex, eyeY, eyeR, eyeR * 1.1, 0, 0, Math.PI * 2);
+        c.fillStyle = "#ffffff";
+        c.fill();
+        c.stroke();
+        c.beginPath();
+        c.arc(ex + eyeR * 0.2, eyeY, eyeR * 0.42, 0, Math.PI * 2);
+        c.fillStyle = "#1a1712";
+        c.fill();
+      }
     }
   }
 
@@ -836,10 +856,13 @@ function drawCustomImage(pair, slot, part) {
   const w = h * (img.naturalWidth / img.naturalHeight);
   const dx = -w / 2;
   const dy = part === "palm" ? -h / 2 : -h + slot.size * 0.25; // 정수리는 아랫변이 얹히게
+  const sq = slot.fist || 0; // 주먹 쥐면 커스텀 그림도 찌부
 
   ctx.save();
-  ctx.translate(slot.x, slot.y + bob);
-  ctx.rotate(tilt);
+  ctx.translate(slot.x, slot.y + bob + slot.size * 0.2 * sq);
+  ctx.rotate(tilt * (1 - sq));
+  const shrink = 1 - 0.22 * sq;
+  ctx.scale(shrink * (1 + 0.22 * sq), shrink * (1 - 0.28 * sq));
   ctx.drawImage(img, dx, dy, w, h);
   const blinkCycle = (qt * 1000 + slot.phase * 500) % 2700;
   if (blinkCycle < 130) drawEyesBlink(ctx, pair, dx, dy, w, h);
@@ -1044,6 +1067,13 @@ function loop() {
       const midRoot = { x: mapX(lm[9].x), y: mapY(lm[9].y) };
       const dist = Math.hypot(midRoot.x - wrist.x, midRoot.y - wrist.y);
       updateSlot(palms[i], (wrist.x + midRoot.x) / 2, (wrist.y + midRoot.y) / 2, dist * 0.5);
+      // 주먹 판정: 손끝(검지~새끼)이 중간 관절보다 손목에 가까우면 접힌 손가락
+      const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+      let curled = 0;
+      for (const [tip, pip] of [[8, 6], [12, 10], [16, 14], [20, 18]]) {
+        if (d3(lm[tip], lm[0]) < d3(lm[pip], lm[0])) curled++;
+      }
+      palms[i].fist = lerp(palms[i].fist, curled >= 3 ? 1 : 0, SMOOTH_K);
     }
 
     // 얼굴 → 정수리 슬롯 (박스 좌표는 픽셀 단위)
