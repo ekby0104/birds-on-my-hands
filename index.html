@@ -8,12 +8,14 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%; height: 100%;
-    background: #111;
+    background: #fff;
+    color: #111;
     overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Helvetica Neue", sans-serif;
   }
   #stage {
     position: fixed; inset: 0;
+    background: #000;
     display: flex; align-items: center; justify-content: center;
   }
   #canvas {
@@ -23,11 +25,12 @@
   #video { display: none; }
   #status {
     position: fixed; top: 0; left: 0; right: 0;
-    padding: 14px 16px;
+    padding: 13px 16px;
     text-align: center;
-    color: #fff;
-    font-size: 15px;
-    background: rgba(0,0,0,0.55);
+    color: #111;
+    font-size: 14px;
+    background: rgba(255,255,255,0.92);
+    border-bottom: 1px solid #111;
     z-index: 10;
     transition: opacity 0.4s;
   }
@@ -36,76 +39,94 @@
     position: fixed;
     bottom: calc(24px + env(safe-area-inset-bottom));
     left: 0; right: 0;
-    display: none; justify-content: center; gap: 12px;
+    display: none; justify-content: center; gap: 10px;
     z-index: 10;
   }
   button {
-    padding: 12px 22px;
-    font-size: 16px;
-    border: none;
-    border-radius: 24px;
-    background: rgba(255,255,255,0.9);
-    color: #1a1712;
+    appearance: none;
+    padding: 12px 20px;
+    font-size: 14px;
     font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid #111;
+    border-radius: 0;
+    background: #fff;
+    color: #111;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  button:active { transform: scale(0.96); }
-  #recordBtn.recording { background: #e5484d; color: #fff; }
+  button:active { transform: scale(0.97); }
+  #recordBtn.recording { background: #e5484d; border-color: #e5484d; color: #fff; }
 
   /* ---- 시작 전 손그림 등록 화면 ---- */
   #setup {
     position: fixed; inset: 0;
     z-index: 20;
-    background: #fdf8e4;
-    color: #1a1712;
+    background: #fff;
+    color: #111;
     overflow-y: auto;
-    padding: 32px 20px calc(32px + env(safe-area-inset-bottom));
-    display: flex; flex-direction: column; align-items: center; gap: 18px;
+    padding: 56px 24px calc(48px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
   }
-  #setup h1 { font-size: 26px; }
-  #setup p { font-size: 14px; color: #6b6455; text-align: center; line-height: 1.6; max-width: 420px; }
-  #pairList {
-    width: 100%; max-width: 420px;
-    display: flex; flex-direction: column; gap: 10px;
+  #setup > * { width: 100%; max-width: 480px; }
+  #setup h1 {
+    font-size: clamp(36px, 10vw, 52px);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
+  }
+  #setup p {
+    font-size: 14px; color: #555; line-height: 1.7;
+    margin: 4px 0 10px;
+  }
+  .secLabel {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+    margin-top: 6px;
+  }
+  .secLabel::after { content: ""; flex: 1; border-top: 1px solid #111; }
+  #pairList { display: flex; flex-direction: column; gap: 8px; }
+  #pairList:empty::after {
+    content: "아직 등록된 그림이 없어요";
+    font-size: 13px; color: #aaa; padding: 10px 0;
   }
   .pair {
     display: flex; align-items: center; gap: 12px;
     background: #fff;
-    border: 2px solid #1a1712;
-    border-radius: 14px;
+    border: 1px solid #111;
     padding: 10px 12px;
   }
   .pair img {
-    width: 56px; height: 56px;
+    width: 52px; height: 52px;
     object-fit: contain;
-    background: #f4efe0;
-    border-radius: 8px;
+    background: #f5f5f5;
   }
   .pair select {
     flex: 1;
-    font-size: 16px;
-    padding: 10px;
-    border: 2px solid #1a1712;
-    border-radius: 10px;
-    background: #fff;
-    color: #1a1712;
-  }
-  .pair .del {
-    padding: 8px 12px;
-    background: #f4efe0;
-    border-radius: 10px;
     font-size: 15px;
+    padding: 10px;
+    border: 1px solid #111;
+    border-radius: 0;
+    background: #fff;
+    color: #111;
   }
-  #addBtn, #drawBtn { background: #fff; border: 2px dashed #1a1712; width: 100%; max-width: 420px; }
-  #startBtn { background: #f5921e; color: #fff; font-size: 18px; padding: 14px 40px; }
-  #setupHint { font-size: 12px; color: #a09880; }
+  .pair .del { border: none; padding: 8px 10px; font-size: 15px; }
+  #addBtn, #drawBtn { border-style: dashed; }
+  #startBtn {
+    background: #111; color: #fff;
+    font-size: 15px; font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 16px 20px;
+    margin-top: 8px;
+  }
+  #setupHint { font-size: 12px; color: #aaa; text-align: center; }
 
   /* ---- 그림판 모달 ---- */
   #drawModal {
     position: fixed; inset: 0;
     z-index: 30;
-    background: #1a1712e6;
+    background: #fff;
     display: none;
     flex-direction: column;
     align-items: center;
@@ -115,46 +136,44 @@
   }
   #drawModal.open { display: flex; }
   #drawCanvas {
-    width: min(90vw, 70vh, 480px);
-    height: min(90vw, 70vh, 480px);
-    border-radius: 16px;
+    width: min(90vw, 62vh, 480px);
+    height: min(90vw, 62vh, 480px);
+    border: 1px solid #111;
     /* 체커보드는 CSS 배경이라 저장되는 PNG는 투명 유지 */
-    background: repeating-conic-gradient(#e8e3d5 0 25%, #fbf8ee 0 50%) 0 0 / 24px 24px;
+    background: repeating-conic-gradient(#f2f2f2 0 25%, #fff 0 50%) 0 0 / 24px 24px;
     touch-action: none;
   }
   #drawTools, #brushRow, #drawActions {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
-    max-width: min(90vw, 520px);
+    max-width: min(92vw, 540px);
   }
   #colorPick {
-    width: 42px; height: 36px;
-    border: 2px solid #fff; border-radius: 10px;
+    width: 40px; height: 34px;
+    border: 1px solid #111; border-radius: 0;
     padding: 0; background: none; cursor: pointer;
   }
   .swatch {
-    width: 34px; height: 34px;
+    width: 30px; height: 30px;
     border-radius: 50%;
-    border: 3px solid transparent;
+    border: 2px solid #e5e5e5;
     padding: 0;
   }
-  .swatch.sel { border-color: #fff; transform: scale(1.15); }
-  .tool {
-    padding: 8px 14px; font-size: 14px;
-    background: rgba(255,255,255,0.15); color: #fff;
-  }
-  .tool.sel { background: #fff; color: #1a1712; }
-  #sizeRange { width: 110px; }
-  #drawDone { background: #f5921e; color: #fff; }
-  #drawCancel { background: rgba(255,255,255,0.2); color: #fff; }
+  .swatch.sel { border-color: #111; transform: scale(1.15); }
+  .tool { padding: 8px 12px; font-size: 13px; }
+  .tool.sel { background: #111; color: #fff; }
+  #sizeRange { width: 110px; accent-color: #111; }
+  #drawDone { background: #111; color: #fff; }
+  #drawCancel { color: #777; border-color: #ccc; }
 </style>
 </head>
 <body>
 <!-- 시작 화면: 손그림 + 부위 페어 등록 -->
 <div id="setup">
-  <h1>손 위의 새 카메라</h1>
-  <p>손그림 사진을 등록하고 어느 부위에 붙일지 고르세요.<br>
-     등록 없이 시작하면 기본 그림(손바닥=새, 정수리=깨진 계란)이 나와요.<br>
+  <h1>Hand Bird<br>Camera</h1>
+  <p>손그림을 등록하고 어느 부위에 붙일지 고르세요.
+     등록 없이 시작하면 기본 그림(손바닥=새, 정수리=깨진 계란)이 나와요.
      배경이 투명한 PNG를 쓰면 제일 예뻐요.</p>
+  <div class="secLabel">등록된 그림</div>
   <div id="pairList"></div>
   <button id="addBtn">＋ 손그림 추가 (사진)</button>
   <button id="drawBtn">✏️ 직접 그리기</button>
