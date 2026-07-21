@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>손 위의 새 카메라</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #111;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #canvas {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+  }
+  #video { display: none; }
+  #status {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 14px 16px;
+    text-align: center;
+    color: #fff;
+    font-size: 15px;
+    background: rgba(0,0,0,0.55);
+    z-index: 10;
+    transition: opacity 0.4s;
+  }
+  #status.hidden { opacity: 0; pointer-events: none; }
+  #controls {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    display: flex; justify-content: center; gap: 12px;
+    z-index: 10;
+  }
+  button {
+    padding: 12px 22px;
+    font-size: 16px;
+    border: none;
+    border-radius: 24px;
+    background: rgba(255,255,255,0.9);
+    color: #1a1712;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: scale(0.96); }
+  #recordBtn.recording {
+    background: #e5484d;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="canvas"></canvas></div>
+<video id="video" playsinline muted autoplay></video>
+<div id="status">모델 로딩 중...</div>
+<div id="controls">
+  <button id="recordBtn">● 녹화</button>
+</div>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+const recordBtn = document.getElementById("recordBtn");
+
+function setStatus(msg, hide = false) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("hidden", hide);
+}
+
+// ---- 새 상태 (양손 지원: 2마리, phase를 다르게 줘서 움직임이 어긋나게) ----
+const birds = [
+  { active: false, x: 0, y: 0, size: 0, phase: 0 },
+  { active: false, x: 0, y: 0, size: 0, phase: Math.PI * 0.7 },
+];
+const SMOOTH_K = 0.35; // lerp 스무딩 계수 (지터 제거)
+const lerp = (a, b, k) => a + (b - a) * k;
+
+// ---- 손그림 애니메이션: 83ms 단위 양자화로 12fps처럼 뚝뚝 끊기게 ----
+function quantizedTime() {
+  return Math.floor(performance.now() / 83) * 83;
+}
+
+// ---- 새 드로잉: 물방울형 몸통 + 흰 눈 2개 + 주황 삼각 부리 ----
+function drawBird(b) {
+  const qt = quantizedTime() / 1000;
+  const s = b.size;
+  const h = s * 2.1;
+  const w = s * 1.55;
+
+  const bob = Math.sin(qt * 3.1 + b.phase) * s * 0.09;      // 위아래 bob
+  const tilt = Math.sin(qt * 1.7 + b.phase) * 0.07;          // 좌우 tilt
+  // 주기적 눈 깜빡임: 약 2.7초 주기 중 짧은 구간만 감김
+  const blinkCycle = (qt * 1000 + b.phase * 500) % 2700;
+  const blink = blinkCycle < 130;
+
+  ctx.save();
+  ctx.translate(b.x, b.y + bob);
+  ctx.rotate(tilt);
+
+  ctx.lineWidth = Math.max(2.5, s * 0.11);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#1a1712";
+  ctx.fillStyle = "#fdf8e4";
+
+  // 물방울형 몸통 (아래가 통통하고 위가 뾰족)
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.52);
+  ctx.bezierCurveTo( w * 0.62, -h * 0.42,  w * 0.60,  h * 0.10,  w * 0.34,  h * 0.30);
+  ctx.bezierCurveTo( w * 0.18,  h * 0.42, -w * 0.18,  h * 0.42, -w * 0.34,  h * 0.30);
+  ctx.bezierCurveTo(-w * 0.60,  h * 0.10, -w * 0.62, -h * 0.42,  0, -h * 0.52);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 꼬리 깃 (작은 삼각형 두 개)
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.30, h * 0.18);
+  ctx.lineTo(-w * 0.55, h * 0.34);
+  ctx.lineTo(-w * 0.24, h * 0.34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 주황 삼각 부리
+  ctx.beginPath();
+  ctx.moveTo(w * 0.02, -h * 0.20);
+  ctx.lineTo(w * 0.34, -h * 0.13);
+  ctx.lineTo(w * 0.02, -h * 0.06);
+  ctx.closePath();
+  ctx.fillStyle = "#f5921e";
+  ctx.fill();
+  ctx.stroke();
+
+  // 흰 눈 2개 (+ 검은 눈동자), 깜빡일 땐 가로선
+  const eyeY = -h * 0.30;
+  const eyeR = s * 0.16;
+  for (const ex of [-w * 0.16, w * 0.14]) {
+    if (blink) {
+      ctx.beginPath();
+      ctx.moveTo(ex - eyeR, eyeY);
+      ctx.lineTo(ex + eyeR, eyeY);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.1, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ex + eyeR * 0.2, eyeY, eyeR * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = "#1a1712";
+      ctx.fill();
+    }
+  }
+
+  // 발 (짧은 선 두 개)
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.12, h * 0.40);
+  ctx.lineTo(-w * 0.12, h * 0.52);
+  ctx.moveTo( w * 0.12, h * 0.40);
+  ctx.lineTo( w * 0.12, h * 0.52);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ---- MediaPipe + 카메라 초기화 ----
+let handLandmarker = null;
+let lastVideoTime = -1;
+
+async function init() {
+  try {
+    setStatus("모델 로딩 중...");
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU",
+      },
+      runningMode: "VIDEO",
+      numHands: 2,
+    });
+  } catch (e) {
+    setStatus("모델 로딩 실패: " + e.message);
+    return;
+  }
+
+  try {
+    setStatus("카메라 켜는 중...");
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 1280 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await new Promise((res) => (video.onloadedmetadata = res));
+    await video.play();
+  } catch (e) {
+    setStatus("카메라 권한이 필요합니다: " + e.message);
+    return;
+  }
+
+  // 좌표 계산은 항상 캔버스 픽셀 기준 (CSS 크기와 다름)
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  setStatus("손바닥을 카메라에 보여주세요 ✋", false);
+  setTimeout(() => statusEl.classList.add("hidden"), 2500);
+
+  requestAnimationFrame(loop);
+}
+
+function loop() {
+  // 비디오를 셀피 모드로 좌우반전해서 그림
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  // detectForVideo는 currentTime 변경 시에만 호출 (중복 추론 방지)
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const result = handLandmarker.detectForVideo(video, performance.now());
+
+    birds.forEach((b) => (b.active = false));
+    const hands = result.landmarks || [];
+    for (let i = 0; i < Math.min(hands.length, birds.length); i++) {
+      const lm = hands[i];
+      const b = birds[i];
+      // 캔버스가 미러링되어 있으므로 x는 (1 - x)로 보정
+      const wrist = { x: (1 - lm[0].x) * canvas.width, y: lm[0].y * canvas.height };
+      const midRoot = { x: (1 - lm[9].x) * canvas.width, y: lm[9].y * canvas.height };
+      // 새 위치 = 손목과 중지 뿌리의 중간 = 손바닥 중심
+      const tx = (wrist.x + midRoot.x) / 2;
+      const ty = (wrist.y + midRoot.y) / 2;
+      // 새 크기: 손목~중지 뿌리 픽셀 거리에 비례 → 손이 가까워지면 새도 커짐
+      const dist = Math.hypot(midRoot.x - wrist.x, midRoot.y - wrist.y);
+      const tsize = dist * 0.5;
+
+      if (!b.active && b.size === 0) {
+        b.x = tx; b.y = ty; b.size = tsize;
+      } else {
+        b.x = lerp(b.x, tx, SMOOTH_K);
+        b.y = lerp(b.y, ty, SMOOTH_K);
+        b.size = lerp(b.size, tsize, SMOOTH_K);
+      }
+      b.active = true;
+    }
+  }
+
+  for (const b of birds) {
+    if (b.active) drawBird(b);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ---- 녹화: canvas.captureStream(30) + MediaRecorder ----
+let recorder = null;
+let chunks = [];
+
+function pickMimeType() {
+  const candidates = [
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+    "video/mp4", // Safari 폴백
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+}
+
+recordBtn.addEventListener("click", () => {
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+    return;
+  }
+  const mimeType = pickMimeType();
+  const stream = canvas.captureStream(30);
+  try {
+    recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  } catch (e) {
+    setStatus("이 브라우저는 녹화를 지원하지 않습니다: " + e.message);
+    return;
+  }
+  chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.onstop = () => {
+    const type = recorder.mimeType || mimeType || "video/webm";
+    const ext = type.includes("mp4") ? "mp4" : "webm";
+    const blob = new Blob(chunks, { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hand-bird-${Date.now()}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    recordBtn.textContent = "● 녹화";
+    recordBtn.classList.remove("recording");
+  };
+  recorder.start();
+  recordBtn.textContent = "■ 정지";
+  recordBtn.classList.add("recording");
+});
+
+init();
+</script>
+</body>
+</html>
