@@ -121,6 +121,15 @@
     margin-top: 8px;
   }
   #setupHint { font-size: 12px; color: #aaa; text-align: center; }
+  #defaultRow { display: flex; gap: 8px; }
+  .defItem {
+    flex: 1;
+    border: 1px solid #111;
+    padding: 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .defItem canvas { width: 92px; height: 92px; }
+  .defItem span { font-size: 12px; color: #555; }
 
   /* ---- 그림판 모달 ---- */
   #drawModal {
@@ -177,6 +186,11 @@
   <div id="pairList"></div>
   <button id="addBtn">＋ 손그림 추가 (사진)</button>
   <button id="drawBtn">✏️ 직접 그리기</button>
+  <div class="secLabel">기본 그림</div>
+  <div id="defaultRow">
+    <div class="defItem"><canvas id="defBird" width="140" height="140"></canvas><span>손바닥 · 새</span></div>
+    <div class="defItem"><canvas id="defEgg" width="140" height="140"></canvas><span>정수리 · 깨진 계란</span></div>
+  </div>
   <button id="startBtn">카메라 시작</button>
   <div id="setupHint">같은 부위에 여러 장 등록하면 손마다 번갈아 나와요</div>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
@@ -537,7 +551,7 @@ function quantizedTime() {
 }
 
 // ---- 기본 그림 1: 새 (손바닥용) ----
-function drawBird(b) {
+function drawBird(c, b) {
   const qt = quantizedTime() / 1000;
   const s = b.size;
   const h = s * 2.1;
@@ -548,81 +562,81 @@ function drawBird(b) {
   const blinkCycle = (qt * 1000 + b.phase * 500) % 2700;
   const blink = blinkCycle < 130;
 
-  ctx.save();
-  ctx.translate(b.x, b.y + bob);
-  ctx.rotate(tilt);
+  c.save();
+  c.translate(b.x, b.y + bob);
+  c.rotate(tilt);
 
-  ctx.lineWidth = Math.max(2.5, s * 0.11);
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "#1a1712";
-  ctx.fillStyle = "#fdf8e4";
+  c.lineWidth = Math.max(2.5, s * 0.11);
+  c.lineJoin = "round";
+  c.lineCap = "round";
+  c.strokeStyle = "#1a1712";
+  c.fillStyle = "#fdf8e4";
 
   // 물방울형 몸통
-  ctx.beginPath();
-  ctx.moveTo(0, -h * 0.52);
-  ctx.bezierCurveTo( w * 0.62, -h * 0.42,  w * 0.60,  h * 0.10,  w * 0.34,  h * 0.30);
-  ctx.bezierCurveTo( w * 0.18,  h * 0.42, -w * 0.18,  h * 0.42, -w * 0.34,  h * 0.30);
-  ctx.bezierCurveTo(-w * 0.60,  h * 0.10, -w * 0.62, -h * 0.42,  0, -h * 0.52);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  c.beginPath();
+  c.moveTo(0, -h * 0.52);
+  c.bezierCurveTo( w * 0.62, -h * 0.42,  w * 0.60,  h * 0.10,  w * 0.34,  h * 0.30);
+  c.bezierCurveTo( w * 0.18,  h * 0.42, -w * 0.18,  h * 0.42, -w * 0.34,  h * 0.30);
+  c.bezierCurveTo(-w * 0.60,  h * 0.10, -w * 0.62, -h * 0.42,  0, -h * 0.52);
+  c.closePath();
+  c.fill();
+  c.stroke();
 
   // 꼬리 깃
-  ctx.beginPath();
-  ctx.moveTo(-w * 0.30, h * 0.18);
-  ctx.lineTo(-w * 0.55, h * 0.34);
-  ctx.lineTo(-w * 0.24, h * 0.34);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  c.beginPath();
+  c.moveTo(-w * 0.30, h * 0.18);
+  c.lineTo(-w * 0.55, h * 0.34);
+  c.lineTo(-w * 0.24, h * 0.34);
+  c.closePath();
+  c.fill();
+  c.stroke();
 
   // 주황 삼각 부리
-  ctx.beginPath();
-  ctx.moveTo(w * 0.02, -h * 0.20);
-  ctx.lineTo(w * 0.34, -h * 0.13);
-  ctx.lineTo(w * 0.02, -h * 0.06);
-  ctx.closePath();
-  ctx.fillStyle = "#f5921e";
-  ctx.fill();
-  ctx.stroke();
+  c.beginPath();
+  c.moveTo(w * 0.02, -h * 0.20);
+  c.lineTo(w * 0.34, -h * 0.13);
+  c.lineTo(w * 0.02, -h * 0.06);
+  c.closePath();
+  c.fillStyle = "#f5921e";
+  c.fill();
+  c.stroke();
 
   // 눈 2개 (깜빡일 땐 가로선)
   const eyeY = -h * 0.30;
   const eyeR = s * 0.16;
   for (const ex of [-w * 0.16, w * 0.14]) {
     if (blink) {
-      ctx.beginPath();
-      ctx.moveTo(ex - eyeR, eyeY);
-      ctx.lineTo(ex + eyeR, eyeY);
-      ctx.stroke();
+      c.beginPath();
+      c.moveTo(ex - eyeR, eyeY);
+      c.lineTo(ex + eyeR, eyeY);
+      c.stroke();
     } else {
-      ctx.beginPath();
-      ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.1, 0, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff";
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(ex + eyeR * 0.2, eyeY, eyeR * 0.42, 0, Math.PI * 2);
-      ctx.fillStyle = "#1a1712";
-      ctx.fill();
+      c.beginPath();
+      c.ellipse(ex, eyeY, eyeR, eyeR * 1.1, 0, 0, Math.PI * 2);
+      c.fillStyle = "#ffffff";
+      c.fill();
+      c.stroke();
+      c.beginPath();
+      c.arc(ex + eyeR * 0.2, eyeY, eyeR * 0.42, 0, Math.PI * 2);
+      c.fillStyle = "#1a1712";
+      c.fill();
     }
   }
 
   // 발
-  ctx.beginPath();
-  ctx.moveTo(-w * 0.12, h * 0.40);
-  ctx.lineTo(-w * 0.12, h * 0.52);
-  ctx.moveTo( w * 0.12, h * 0.40);
-  ctx.lineTo( w * 0.12, h * 0.52);
-  ctx.stroke();
+  c.beginPath();
+  c.moveTo(-w * 0.12, h * 0.40);
+  c.lineTo(-w * 0.12, h * 0.52);
+  c.moveTo( w * 0.12, h * 0.40);
+  c.lineTo( w * 0.12, h * 0.52);
+  c.stroke();
 
-  ctx.restore();
+  c.restore();
 }
 
 // ---- 기본 그림 2: 깨진 계란 (정수리용) ----
 // slot.x = 머리 중심, slot.y = 정수리(머리 박스 윗변)
-function drawCrackedEgg(slot) {
+function drawCrackedEgg(c, slot) {
   const qt = quantizedTime() / 1000;
   const s = slot.size;
   const eggW = s * 1.5;
@@ -630,54 +644,54 @@ function drawCrackedEgg(slot) {
   const tilt = Math.sin(qt * 1.3 + slot.phase) * 0.05;
   const bob = Math.sin(qt * 2.6 + slot.phase) * s * 0.04;
 
-  ctx.save();
+  c.save();
   // 껍데기 아랫변이 정수리에 살짝 겹치게
-  ctx.translate(slot.x, slot.y + s * 0.22 + bob);
-  ctx.rotate(tilt);
+  c.translate(slot.x, slot.y + s * 0.22 + bob);
+  c.rotate(tilt);
 
-  ctx.lineWidth = Math.max(2.5, s * 0.1);
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "#1a1712";
+  c.lineWidth = Math.max(2.5, s * 0.1);
+  c.lineJoin = "round";
+  c.lineCap = "round";
+  c.strokeStyle = "#1a1712";
 
   // 흘러내리는 노른자 (껍데기 뒤에 먼저)
-  ctx.beginPath();
-  ctx.ellipse(s * 0.12, s * 0.2, s * 0.3, s * 0.22, 0, 0, Math.PI * 2);
-  ctx.fillStyle = "#f7b733";
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(s * 0.12, s * 0.38);
-  ctx.lineTo(s * 0.12, s * 0.62);
-  ctx.stroke();
+  c.beginPath();
+  c.ellipse(s * 0.12, s * 0.2, s * 0.3, s * 0.22, 0, 0, Math.PI * 2);
+  c.fillStyle = "#f7b733";
+  c.fill();
+  c.stroke();
+  c.beginPath();
+  c.moveTo(s * 0.12, s * 0.38);
+  c.lineTo(s * 0.12, s * 0.62);
+  c.stroke();
 
   // 계란 껍데기: 위쪽 반타원 + 지그재그 깨진 아랫변
-  ctx.beginPath();
-  ctx.ellipse(0, 0, eggW / 2, domeH, 0, Math.PI, 0); // 왼쪽에서 오른쪽으로 위 반원
+  c.beginPath();
+  c.ellipse(0, 0, eggW / 2, domeH, 0, Math.PI, 0); // 왼쪽에서 오른쪽으로 위 반원
   const teeth = 6;
   const step = eggW / teeth;
   for (let i = 1; i <= teeth; i++) {
     const zx = eggW / 2 - i * step;
     const zy = i % 2 === 1 ? s * 0.16 : 0;
-    ctx.lineTo(zx, zy);
+    c.lineTo(zx, zy);
   }
-  ctx.closePath();
-  ctx.fillStyle = "#fffdf5";
-  ctx.fill();
-  ctx.stroke();
+  c.closePath();
+  c.fillStyle = "#fffdf5";
+  c.fill();
+  c.stroke();
 
   // 껍데기 금 간 선
-  ctx.beginPath();
-  ctx.moveTo(-eggW * 0.16, -domeH * 0.62);
-  ctx.lineTo(-eggW * 0.06, -domeH * 0.45);
-  ctx.lineTo(-eggW * 0.20, -domeH * 0.30);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(eggW * 0.20, -domeH * 0.5);
-  ctx.lineTo(eggW * 0.12, -domeH * 0.34);
-  ctx.stroke();
+  c.beginPath();
+  c.moveTo(-eggW * 0.16, -domeH * 0.62);
+  c.lineTo(-eggW * 0.06, -domeH * 0.45);
+  c.lineTo(-eggW * 0.20, -domeH * 0.30);
+  c.stroke();
+  c.beginPath();
+  c.moveTo(eggW * 0.20, -domeH * 0.5);
+  c.lineTo(eggW * 0.12, -domeH * 0.34);
+  c.stroke();
 
-  ctx.restore();
+  c.restore();
 }
 
 // ---- 등록된 손그림 이미지 드로잉 ----
@@ -698,6 +712,20 @@ function drawCustomImage(img, slot, part) {
   }
   ctx.restore();
 }
+
+// ---- 시작 화면 기본 그림 미리보기 (같은 드로잉 함수 재사용, 애니메이션 포함) ----
+const defBirdCtx = document.getElementById("defBird").getContext("2d");
+const defEggCtx = document.getElementById("defEgg").getContext("2d");
+function previewLoop() {
+  if (setupEl.style.display !== "none") {
+    defBirdCtx.clearRect(0, 0, 140, 140);
+    drawBird(defBirdCtx, { x: 70, y: 68, size: 33, phase: 0 });
+    defEggCtx.clearRect(0, 0, 140, 140);
+    drawCrackedEgg(defEggCtx, { x: 70, y: 88, size: 46, phase: 0 });
+  }
+  requestAnimationFrame(previewLoop);
+}
+previewLoop();
 
 // ---- MediaPipe + 카메라 초기화 ----
 let handLandmarker = null;
@@ -865,7 +893,7 @@ function loop() {
     if (!s.active) continue;
     const i = palms.indexOf(s);
     if (palmImgs.length > 0) drawCustomImage(palmImgs[i % palmImgs.length], s, "palm");
-    else drawBird(s);
+    else drawBird(ctx, s);
   }
 
   const headImgs = imagesFor("head");
@@ -873,7 +901,7 @@ function loop() {
     if (!s.active) continue;
     const i = heads.indexOf(s);
     if (headImgs.length > 0) drawCustomImage(headImgs[i % headImgs.length], s, "head");
-    else drawCrackedEgg(s);
+    else drawCrackedEgg(ctx, s);
   }
 
   requestAnimationFrame(loop);
