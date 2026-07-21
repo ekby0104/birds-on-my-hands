@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>손 위의 새 카메라</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐦</text></svg>">
+<link id="favicon" rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐦</text></svg>">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -883,6 +883,20 @@ function drawPairThumb(pair, i) {
   if (blinkCycle < 130) drawEyesBlink(c, pair, -w / 2, -h / 2, w, h);
   c.restore();
 }
+
+// 파비콘도 기본 새 그림으로 (눈 감은 순간이면 잠깐 뒤에 다시 그림)
+function setFaviconFromBird() {
+  if (quantizedTime() % 2700 < 130) {
+    setTimeout(setFaviconFromBird, 200);
+    return;
+  }
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 64;
+  drawBird(c.getContext("2d"), { x: 32, y: 30, size: 14.5, phase: 0 });
+  document.getElementById("favicon").href = c.toDataURL("image/png");
+}
+setFaviconFromBird();
 
 function previewLoop() {
   if (setupEl.style.display !== "none") {
