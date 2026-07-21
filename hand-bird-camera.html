@@ -686,23 +686,23 @@ let faceDetector = null;
 let lastVideoTime = -1;
 let running = false;
 
-// 화면 방향에 맞는 해상도를 요청해서 카메라를 염
-// (세로 화면에 가로 영상이 오면 시야가 옆으로 넓은 채 확대되는 문제 방지)
+// 카메라 열기. iOS는 카메라 모드를 가로 기준(1280x720)으로 고른 뒤 기기 방향에 맞춰
+// 알아서 회전해주므로, 세로 비율을 강제로 요청하면 오히려 가로 영상이 온다.
+// 표준 모드를 요청하고, 세로 화면인데 가로 영상이 오면 브라우저 기본 설정으로 재시도.
 async function openCamera() {
   if (video.srcObject) video.srcObject.getTracks().forEach((t) => t.stop());
   const portrait = window.innerHeight >= window.innerWidth;
-  const dims = portrait
-    ? { width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } }
-    : { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user", ...dims },
-    audio: false,
-  });
-  // 그래도 세로 화면에 가로 영상이 왔으면 소스 크롭을 다시 요청 (지원 브라우저만)
-  const track = stream.getVideoTracks()[0];
-  const st = track.getSettings();
-  if (portrait && st.width > st.height) {
-    try { await track.applyConstraints({ aspectRatio: 9 / 16 }); } catch (e) {}
+  const tries = [
+    { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: "user" },
+  ];
+  let stream = null;
+  for (let i = 0; i < tries.length; i++) {
+    stream = await navigator.mediaDevices.getUserMedia({ video: tries[i], audio: false });
+    const st = stream.getVideoTracks()[0].getSettings();
+    const streamPortrait = (st.height || 0) >= (st.width || 1);
+    if (!portrait || streamPortrait || i === tries.length - 1) break;
+    stream.getTracks().forEach((t) => t.stop());
   }
   video.srcObject = stream;
   await new Promise((res) => (video.onloadedmetadata = res));
