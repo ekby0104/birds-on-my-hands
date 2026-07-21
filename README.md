@@ -51,9 +51,9 @@ npx serve
 | 렌더링 | Canvas 2D — 매 프레임 비디오를 좌우반전으로 그린 뒤 그 위에 캐릭터 드로잉 |
 | 녹화 | `MediaRecorder` + `canvas.captureStream(30)` + 마이크 트랙 → mp4 우선(iOS 호환), webm 폴백 |
 | 그림판 | Canvas 2D + Pointer Events, 투명 배경 PNG로 내보내기 |
-| 빌드 | 없음. 순수 HTML 단일 파일 (`hand-bird-camera.html`), `<script type="module">` |
+| 빌드 | 없음. 순수 HTML 단일 파일 (`index.html`), `<script type="module">` |
 
-## 핵심 로직 (hand-bird-camera.html)
+## 핵심 로직 (index.html)
 
 - **새 위치**: 손목(랜드마크 0)과 중지 뿌리(랜드마크 9)의 중간 = 손바닥 중심
 - **정수리 위치**: 얼굴 박스 윗변에서 박스 높이의 25%만큼 위 (박스 윗변은 이마 근처라서)

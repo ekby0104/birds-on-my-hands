@@ -2,10 +2,943 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="refresh" content="0; url=./hand-bird-camera.html">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>손 위의 새 카메라</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #111;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #canvas {
+    width: 100%; height: 100%;
+    object-fit: contain;
+  }
+  #video { display: none; }
+  #status {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 14px 16px;
+    text-align: center;
+    color: #fff;
+    font-size: 15px;
+    background: rgba(0,0,0,0.55);
+    z-index: 10;
+    transition: opacity 0.4s;
+  }
+  #status.hidden { opacity: 0; pointer-events: none; }
+  #controls {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    display: none; justify-content: center; gap: 12px;
+    z-index: 10;
+  }
+  button {
+    padding: 12px 22px;
+    font-size: 16px;
+    border: none;
+    border-radius: 24px;
+    background: rgba(255,255,255,0.9);
+    color: #1a1712;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: scale(0.96); }
+  #recordBtn.recording { background: #e5484d; color: #fff; }
+
+  /* ---- 시작 전 손그림 등록 화면 ---- */
+  #setup {
+    position: fixed; inset: 0;
+    z-index: 20;
+    background: #fdf8e4;
+    color: #1a1712;
+    overflow-y: auto;
+    padding: 32px 20px calc(32px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+  }
+  #setup h1 { font-size: 26px; }
+  #setup p { font-size: 14px; color: #6b6455; text-align: center; line-height: 1.6; max-width: 420px; }
+  #pairList {
+    width: 100%; max-width: 420px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .pair {
+    display: flex; align-items: center; gap: 12px;
+    background: #fff;
+    border: 2px solid #1a1712;
+    border-radius: 14px;
+    padding: 10px 12px;
+  }
+  .pair img {
+    width: 56px; height: 56px;
+    object-fit: contain;
+    background: #f4efe0;
+    border-radius: 8px;
+  }
+  .pair select {
+    flex: 1;
+    font-size: 16px;
+    padding: 10px;
+    border: 2px solid #1a1712;
+    border-radius: 10px;
+    background: #fff;
+    color: #1a1712;
+  }
+  .pair .del {
+    padding: 8px 12px;
+    background: #f4efe0;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+  #addBtn, #drawBtn { background: #fff; border: 2px dashed #1a1712; width: 100%; max-width: 420px; }
+  #startBtn { background: #f5921e; color: #fff; font-size: 18px; padding: 14px 40px; }
+  #setupHint { font-size: 12px; color: #a09880; }
+
+  /* ---- 그림판 모달 ---- */
+  #drawModal {
+    position: fixed; inset: 0;
+    z-index: 30;
+    background: #1a1712e6;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px;
+  }
+  #drawModal.open { display: flex; }
+  #drawCanvas {
+    width: min(90vw, 70vh, 480px);
+    height: min(90vw, 70vh, 480px);
+    border-radius: 16px;
+    /* 체커보드는 CSS 배경이라 저장되는 PNG는 투명 유지 */
+    background: repeating-conic-gradient(#e8e3d5 0 25%, #fbf8ee 0 50%) 0 0 / 24px 24px;
+    touch-action: none;
+  }
+  #drawTools, #brushRow, #drawActions {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+    max-width: min(90vw, 520px);
+  }
+  #colorPick {
+    width: 42px; height: 36px;
+    border: 2px solid #fff; border-radius: 10px;
+    padding: 0; background: none; cursor: pointer;
+  }
+  .swatch {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    padding: 0;
+  }
+  .swatch.sel { border-color: #fff; transform: scale(1.15); }
+  .tool {
+    padding: 8px 14px; font-size: 14px;
+    background: rgba(255,255,255,0.15); color: #fff;
+  }
+  .tool.sel { background: #fff; color: #1a1712; }
+  #sizeRange { width: 110px; }
+  #drawDone { background: #f5921e; color: #fff; }
+  #drawCancel { background: rgba(255,255,255,0.2); color: #fff; }
+</style>
 </head>
 <body>
-<a href="./hand-bird-camera.html">손 위의 새 카메라 열기</a>
+<!-- 시작 화면: 손그림 + 부위 페어 등록 -->
+<div id="setup">
+  <h1>손 위의 새 카메라</h1>
+  <p>손그림 사진을 등록하고 어느 부위에 붙일지 고르세요.<br>
+     등록 없이 시작하면 기본 그림(손바닥=새, 정수리=깨진 계란)이 나와요.<br>
+     배경이 투명한 PNG를 쓰면 제일 예뻐요.</p>
+  <div id="pairList"></div>
+  <button id="addBtn">＋ 손그림 추가 (사진)</button>
+  <button id="drawBtn">✏️ 직접 그리기</button>
+  <button id="startBtn">카메라 시작</button>
+  <div id="setupHint">같은 부위에 여러 장 등록하면 손마다 번갈아 나와요</div>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden>
+</div>
+
+<!-- 그림판 모달 -->
+<div id="drawModal">
+  <div id="drawTools">
+    <input type="color" id="colorPick" value="#1a1712" title="색 직접 고르기">
+  </div>
+  <div id="brushRow">
+    <button class="tool brush sel" data-brush="pen">펜</button>
+    <button class="tool brush" data-brush="marker">마커</button>
+    <button class="tool brush" data-brush="highlight">형광펜</button>
+    <button class="tool brush" data-brush="crayon">크레용</button>
+    <button class="tool brush" data-brush="spray">스프레이</button>
+    <button class="tool" id="eraserBtn">지우개</button>
+    <input type="range" id="sizeRange" min="4" max="48" value="14">
+    <button class="tool" id="undoBtn">↩</button>
+    <button class="tool" id="clearBtn">전체 지우기</button>
+  </div>
+  <canvas id="drawCanvas" width="640" height="640"></canvas>
+  <div id="drawActions">
+    <button id="drawCancel">취소</button>
+    <button id="drawDone">완료 → 등록</button>
+  </div>
+</div>
+
+<div id="stage"><canvas id="canvas"></canvas></div>
+<video id="video" playsinline muted autoplay></video>
+<div id="status" class="hidden"></div>
+<div id="controls">
+  <button id="backBtn">← 처음으로</button>
+  <button id="recordBtn">● 녹화</button>
+</div>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker, FaceDetector } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const MAX_HANDS = 4;
+const MAX_HEADS = 4;
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+const recordBtn = document.getElementById("recordBtn");
+const setupEl = document.getElementById("setup");
+const pairListEl = document.getElementById("pairList");
+const addBtn = document.getElementById("addBtn");
+const startBtn = document.getElementById("startBtn");
+const fileInput = document.getElementById("fileInput");
+
+function setStatus(msg, hide = false) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("hidden", hide);
+}
+
+// ---- 손그림 + 부위 페어 등록 ----
+// pairs: [{ img: HTMLImageElement, part: 'palm' | 'head' }]
+const pairs = [];
+
+function addPair(img) {
+  const pair = { img, part: "palm" };
+  pairs.push(pair);
+
+  const row = document.createElement("div");
+  row.className = "pair";
+  const thumb = document.createElement("img");
+  thumb.src = img.src;
+  const sel = document.createElement("select");
+  sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>`;
+  sel.addEventListener("change", () => (pair.part = sel.value));
+  const del = document.createElement("button");
+  del.className = "del";
+  del.textContent = "✕";
+  del.addEventListener("click", () => {
+    pairs.splice(pairs.indexOf(pair), 1);
+    row.remove();
+  });
+  row.append(thumb, sel, del);
+  pairListEl.appendChild(row);
+}
+
+addBtn.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", () => {
+  for (const file of fileInput.files) {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    addPair(img);
+  }
+  fileInput.value = "";
+});
+
+// ---- 그림판: 투명 배경 캔버스에 직접 그려서 등록 ----
+const drawModal = document.getElementById("drawModal");
+const drawCanvas = document.getElementById("drawCanvas");
+const dctx = drawCanvas.getContext("2d");
+const drawTools = document.getElementById("drawTools");
+const sizeRange = document.getElementById("sizeRange");
+const eraserBtn = document.getElementById("eraserBtn");
+
+const colorPick = document.getElementById("colorPick");
+const COLORS = [
+  "#1a1712", "#6b6455", "#ffffff", "#fdf8e4",
+  "#e5484d", "#ff8fa3", "#f5921e", "#f7b733",
+  "#4caf6e", "#a3d977", "#3b82d6", "#7cc4e8",
+  "#8b5ad6", "#c98be8", "#8b5a3c", "#d9a066",
+];
+let penColor = COLORS[0];
+let erasing = false;
+
+COLORS.slice().reverse().forEach((c) => {
+  const b = document.createElement("button");
+  b.className = "swatch" + (c === penColor ? " sel" : "");
+  b.style.background = c;
+  b.addEventListener("click", () => {
+    penColor = c;
+    colorPick.value = c;
+    erasing = false;
+    eraserBtn.classList.remove("sel");
+    drawTools.querySelectorAll(".swatch").forEach((s) => s.classList.toggle("sel", s === b));
+  });
+  drawTools.prepend(b);
+});
+
+// 팔레트에 없는 색은 컬러피커로 자유롭게
+colorPick.addEventListener("input", () => {
+  penColor = colorPick.value;
+  erasing = false;
+  eraserBtn.classList.remove("sel");
+  drawTools.querySelectorAll(".swatch").forEach((s) => s.classList.remove("sel"));
+});
+
+// 펜 종류
+let brushType = "pen";
+document.querySelectorAll(".brush").forEach((b) =>
+  b.addEventListener("click", () => {
+    brushType = b.dataset.brush;
+    erasing = false;
+    eraserBtn.classList.remove("sel");
+    document.querySelectorAll(".brush").forEach((x) => x.classList.toggle("sel", x === b));
+  })
+);
+
+eraserBtn.addEventListener("click", () => {
+  erasing = !erasing;
+  eraserBtn.classList.toggle("sel", erasing);
+});
+
+// 되돌리기: 스트로크 시작마다 스냅샷 저장
+const undoStack = [];
+function snapshot() {
+  if (undoStack.length >= 20) undoStack.shift();
+  undoStack.push(dctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height));
+}
+document.getElementById("undoBtn").addEventListener("click", () => {
+  if (undoStack.length > 0) dctx.putImageData(undoStack.pop(), 0, 0);
+});
+document.getElementById("clearBtn").addEventListener("click", () => {
+  snapshot();
+  dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+});
+
+let drawing = false;
+let strokePts = [];
+let strokeBase = null; // 스트로크 시작 시점 캔버스 (반투명 펜을 겹침 없이 다시 그리기 위함)
+let strokeSeed = 0;
+
+function canvasPoint(e) {
+  const r = drawCanvas.getBoundingClientRect();
+  return {
+    x: ((e.clientX - r.left) / r.width) * drawCanvas.width,
+    y: ((e.clientY - r.top) / r.height) * drawCanvas.height,
+  };
+}
+
+function pxScale() {
+  return drawCanvas.width / drawCanvas.getBoundingClientRect().width;
+}
+
+// 크레용 질감용 결정적 난수 (다시 그릴 때마다 모양이 안 바뀌게)
+function hash(i) {
+  const x = Math.sin(i * 127.1 + strokeSeed * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function strokePath(width, jitterK) {
+  dctx.strokeStyle = penColor;
+  dctx.lineWidth = width;
+  dctx.lineCap = "round";
+  dctx.lineJoin = "round";
+  dctx.beginPath();
+  strokePts.forEach((p, i) => {
+    let x = p.x, y = p.y;
+    if (jitterK !== undefined) {
+      x += (hash(i * 3 + jitterK) - 0.5) * width * 0.9;
+      y += (hash(i * 3 + jitterK + 1) - 0.5) * width * 0.9;
+    }
+    if (i === 0) dctx.moveTo(x, y);
+    else dctx.lineTo(x, y);
+  });
+  if (strokePts.length === 1) dctx.lineTo(strokePts[0].x + 0.01, strokePts[0].y); // 점 하나도 보이게
+  dctx.stroke();
+}
+
+// 반투명 펜은 시작 시점 이미지 위에 전체 경로를 매번 다시 그림 → 겹침 얼룩 없이 균일한 농도
+function renderStroke() {
+  const w = sizeRange.value * pxScale();
+  dctx.putImageData(strokeBase, 0, 0);
+  dctx.save();
+  if (erasing) {
+    dctx.globalCompositeOperation = "destination-out";
+    strokePath(w * 2);
+  } else if (brushType === "pen") {
+    strokePath(w);
+  } else if (brushType === "marker") {
+    dctx.globalAlpha = 0.55;
+    strokePath(w * 1.9);
+  } else if (brushType === "highlight") {
+    dctx.globalAlpha = 0.3;
+    strokePath(w * 2.6);
+  } else if (brushType === "crayon") {
+    dctx.globalAlpha = 0.35;
+    strokePath(w * 0.85, 0);
+    strokePath(w * 0.7, 7);
+    strokePath(w * 0.55, 13);
+  }
+  dctx.restore();
+}
+
+// 스프레이는 누적식: 지나갈 때마다 점을 뿌림
+function sprayAt(pt) {
+  const scale = pxScale();
+  const r = sizeRange.value * scale * 1.6;
+  dctx.save();
+  if (erasing) dctx.globalCompositeOperation = "destination-out";
+  dctx.fillStyle = penColor;
+  dctx.globalAlpha = 0.85;
+  const n = Math.max(12, Math.round(r));
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2;
+    const d = Math.sqrt(Math.random()) * r;
+    dctx.beginPath();
+    dctx.arc(pt.x + Math.cos(a) * d, pt.y + Math.sin(a) * d, 1.3 * scale, 0, Math.PI * 2);
+    dctx.fill();
+  }
+  dctx.restore();
+}
+
+drawCanvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  drawCanvas.setPointerCapture(e.pointerId);
+  snapshot();
+  drawing = true;
+  strokeSeed++;
+  strokePts = [canvasPoint(e)];
+  if (brushType === "spray") {
+    sprayAt(strokePts[0]);
+  } else {
+    strokeBase = undoStack[undoStack.length - 1];
+    renderStroke();
+  }
+});
+drawCanvas.addEventListener("pointermove", (e) => {
+  if (!drawing) return;
+  const pt = canvasPoint(e);
+  strokePts.push(pt);
+  if (brushType === "spray") sprayAt(pt);
+  else renderStroke();
+});
+["pointerup", "pointercancel"].forEach((ev) =>
+  drawCanvas.addEventListener(ev, () => { drawing = false; strokePts = []; strokeBase = null; })
+);
+
+document.getElementById("drawBtn").addEventListener("click", () => {
+  dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  undoStack.length = 0;
+  drawModal.classList.add("open");
+});
+document.getElementById("drawCancel").addEventListener("click", () => {
+  drawModal.classList.remove("open");
+});
+// 그린 부분만 남기고 투명 여백을 잘라냄 (안 하면 여백 때문에 캐릭터가 작게 보임)
+function trimmedDrawing() {
+  const { width: W, height: H } = drawCanvas;
+  const data = dctx.getImageData(0, 0, W, H).data;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] > 8) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null; // 아무것도 안 그림
+  const pad = 12;
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+  maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
+  const tmp = document.createElement("canvas");
+  tmp.width = maxX - minX + 1;
+  tmp.height = maxY - minY + 1;
+  tmp.getContext("2d").drawImage(drawCanvas, -minX, -minY);
+  return tmp.toDataURL("image/png"); // 투명 배경 그대로 저장
+}
+
+document.getElementById("drawDone").addEventListener("click", () => {
+  const url = trimmedDrawing();
+  if (url) {
+    const img = new Image();
+    img.src = url;
+    img.onload = () => addPair(img);
+  }
+  drawModal.classList.remove("open");
+});
+
+startBtn.addEventListener("click", () => {
+  setupEl.style.display = "none";
+  document.getElementById("controls").style.display = "flex";
+  init();
+});
+
+function imagesFor(part) {
+  return pairs.filter((p) => p.part === part && p.img.complete && p.img.naturalWidth > 0).map((p) => p.img);
+}
+
+// ---- 부착 슬롯 (지터 제거용 lerp 스무딩 상태) ----
+const SMOOTH_K = 0.35;
+const lerp = (a, b, k) => a + (b - a) * k;
+
+function makeSlots(n) {
+  return Array.from({ length: n }, (_, i) => ({
+    active: false, x: 0, y: 0, size: 0,
+    phase: i * 1.7, // 슬롯마다 phase를 다르게 줘서 움직임이 어긋나게
+  }));
+}
+const palms = makeSlots(MAX_HANDS);
+const heads = makeSlots(MAX_HEADS);
+
+function updateSlot(slot, tx, ty, tsize) {
+  if (slot.size === 0) {
+    slot.x = tx; slot.y = ty; slot.size = tsize;
+  } else {
+    slot.x = lerp(slot.x, tx, SMOOTH_K);
+    slot.y = lerp(slot.y, ty, SMOOTH_K);
+    slot.size = lerp(slot.size, tsize, SMOOTH_K);
+  }
+  slot.active = true;
+}
+
+// ---- 손그림 애니메이션: 83ms 단위 양자화로 12fps처럼 뚝뚝 끊기게 ----
+function quantizedTime() {
+  return Math.floor(performance.now() / 83) * 83;
+}
+
+// ---- 기본 그림 1: 새 (손바닥용) ----
+function drawBird(b) {
+  const qt = quantizedTime() / 1000;
+  const s = b.size;
+  const h = s * 2.1;
+  const w = s * 1.55;
+
+  const bob = Math.sin(qt * 3.1 + b.phase) * s * 0.09;
+  const tilt = Math.sin(qt * 1.7 + b.phase) * 0.07;
+  const blinkCycle = (qt * 1000 + b.phase * 500) % 2700;
+  const blink = blinkCycle < 130;
+
+  ctx.save();
+  ctx.translate(b.x, b.y + bob);
+  ctx.rotate(tilt);
+
+  ctx.lineWidth = Math.max(2.5, s * 0.11);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#1a1712";
+  ctx.fillStyle = "#fdf8e4";
+
+  // 물방울형 몸통
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.52);
+  ctx.bezierCurveTo( w * 0.62, -h * 0.42,  w * 0.60,  h * 0.10,  w * 0.34,  h * 0.30);
+  ctx.bezierCurveTo( w * 0.18,  h * 0.42, -w * 0.18,  h * 0.42, -w * 0.34,  h * 0.30);
+  ctx.bezierCurveTo(-w * 0.60,  h * 0.10, -w * 0.62, -h * 0.42,  0, -h * 0.52);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 꼬리 깃
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.30, h * 0.18);
+  ctx.lineTo(-w * 0.55, h * 0.34);
+  ctx.lineTo(-w * 0.24, h * 0.34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 주황 삼각 부리
+  ctx.beginPath();
+  ctx.moveTo(w * 0.02, -h * 0.20);
+  ctx.lineTo(w * 0.34, -h * 0.13);
+  ctx.lineTo(w * 0.02, -h * 0.06);
+  ctx.closePath();
+  ctx.fillStyle = "#f5921e";
+  ctx.fill();
+  ctx.stroke();
+
+  // 눈 2개 (깜빡일 땐 가로선)
+  const eyeY = -h * 0.30;
+  const eyeR = s * 0.16;
+  for (const ex of [-w * 0.16, w * 0.14]) {
+    if (blink) {
+      ctx.beginPath();
+      ctx.moveTo(ex - eyeR, eyeY);
+      ctx.lineTo(ex + eyeR, eyeY);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.1, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ex + eyeR * 0.2, eyeY, eyeR * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = "#1a1712";
+      ctx.fill();
+    }
+  }
+
+  // 발
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.12, h * 0.40);
+  ctx.lineTo(-w * 0.12, h * 0.52);
+  ctx.moveTo( w * 0.12, h * 0.40);
+  ctx.lineTo( w * 0.12, h * 0.52);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ---- 기본 그림 2: 깨진 계란 (정수리용) ----
+// slot.x = 머리 중심, slot.y = 정수리(머리 박스 윗변)
+function drawCrackedEgg(slot) {
+  const qt = quantizedTime() / 1000;
+  const s = slot.size;
+  const eggW = s * 1.5;
+  const domeH = s * 1.05;
+  const tilt = Math.sin(qt * 1.3 + slot.phase) * 0.05;
+  const bob = Math.sin(qt * 2.6 + slot.phase) * s * 0.04;
+
+  ctx.save();
+  // 껍데기 아랫변이 정수리에 살짝 겹치게
+  ctx.translate(slot.x, slot.y + s * 0.22 + bob);
+  ctx.rotate(tilt);
+
+  ctx.lineWidth = Math.max(2.5, s * 0.1);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#1a1712";
+
+  // 흘러내리는 노른자 (껍데기 뒤에 먼저)
+  ctx.beginPath();
+  ctx.ellipse(s * 0.12, s * 0.2, s * 0.3, s * 0.22, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#f7b733";
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(s * 0.12, s * 0.38);
+  ctx.lineTo(s * 0.12, s * 0.62);
+  ctx.stroke();
+
+  // 계란 껍데기: 위쪽 반타원 + 지그재그 깨진 아랫변
+  ctx.beginPath();
+  ctx.ellipse(0, 0, eggW / 2, domeH, 0, Math.PI, 0); // 왼쪽에서 오른쪽으로 위 반원
+  const teeth = 6;
+  const step = eggW / teeth;
+  for (let i = 1; i <= teeth; i++) {
+    const zx = eggW / 2 - i * step;
+    const zy = i % 2 === 1 ? s * 0.16 : 0;
+    ctx.lineTo(zx, zy);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "#fffdf5";
+  ctx.fill();
+  ctx.stroke();
+
+  // 껍데기 금 간 선
+  ctx.beginPath();
+  ctx.moveTo(-eggW * 0.16, -domeH * 0.62);
+  ctx.lineTo(-eggW * 0.06, -domeH * 0.45);
+  ctx.lineTo(-eggW * 0.20, -domeH * 0.30);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(eggW * 0.20, -domeH * 0.5);
+  ctx.lineTo(eggW * 0.12, -domeH * 0.34);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ---- 등록된 손그림 이미지 드로잉 ----
+function drawCustomImage(img, slot, part) {
+  const qt = quantizedTime() / 1000;
+  const bob = Math.sin(qt * 3.1 + slot.phase) * slot.size * 0.09;
+  const tilt = Math.sin(qt * 1.7 + slot.phase) * 0.07;
+  const h = slot.size * (part === "palm" ? 2.1 : 1.7);
+  const w = h * (img.naturalWidth / img.naturalHeight);
+
+  ctx.save();
+  ctx.translate(slot.x, slot.y + bob);
+  ctx.rotate(tilt);
+  if (part === "palm") {
+    ctx.drawImage(img, -w / 2, -h / 2, w, h); // 손바닥 중심에
+  } else {
+    ctx.drawImage(img, -w / 2, -h + slot.size * 0.25, w, h); // 아랫변이 정수리에 얹히게
+  }
+  ctx.restore();
+}
+
+// ---- MediaPipe + 카메라 초기화 ----
+let handLandmarker = null;
+let faceDetector = null;
+let lastVideoTime = -1;
+let running = false;
+
+// 카메라 열기. iOS는 카메라 모드를 가로 기준(1280x720)으로 고른 뒤 기기 방향에 맞춰
+// 알아서 회전해주므로, 세로 비율을 강제로 요청하면 오히려 가로 영상이 온다.
+// 표준 모드를 요청하고, 세로 화면인데 가로 영상이 오면 브라우저 기본 설정으로 재시도.
+async function openCamera() {
+  if (video.srcObject) video.srcObject.getTracks().forEach((t) => t.stop());
+  const portrait = window.innerHeight >= window.innerWidth;
+  const tries = [
+    { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: "user" },
+  ];
+  let stream = null;
+  for (let i = 0; i < tries.length; i++) {
+    stream = await navigator.mediaDevices.getUserMedia({ video: tries[i], audio: false });
+    const st = stream.getVideoTracks()[0].getSettings();
+    const streamPortrait = (st.height || 0) >= (st.width || 1);
+    if (!portrait || streamPortrait || i === tries.length - 1) break;
+    stream.getTracks().forEach((t) => t.stop());
+  }
+  video.srcObject = stream;
+  await new Promise((res) => (video.onloadedmetadata = res));
+  await video.play();
+  updateCrop();
+}
+
+// 기기 회전/창 크기 변경 시 크롭만 다시 계산.
+// iOS는 회전하면 기존 스트림을 알아서 돌려주므로 카메라를 다시 열면 안 됨 (멈춤 원인)
+window.addEventListener("resize", () => {
+  if (running) updateCrop();
+});
+
+async function init() {
+  try {
+    if (!handLandmarker) {
+    setStatus("모델 로딩 중...");
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU",
+      },
+      runningMode: "VIDEO",
+      numHands: MAX_HANDS,
+    });
+    faceDetector = await FaceDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+        delegate: "GPU",
+      },
+      runningMode: "VIDEO",
+    });
+    }
+  } catch (e) {
+    setStatus("모델 로딩 실패: " + e.message);
+    return;
+  }
+
+  try {
+    setStatus("카메라 켜는 중...");
+    await openCamera();
+  } catch (e) {
+    setStatus("카메라 권한이 필요합니다: " + e.message);
+    return;
+  }
+
+  // 좌표 계산은 항상 캔버스 픽셀 기준 (CSS 크기와 다름)
+  updateCrop();
+
+  setStatus("손바닥이나 얼굴을 카메라에 보여주세요 ✋", false);
+  setTimeout(() => statusEl.classList.add("hidden"), 2500);
+
+  lastVideoTime = -1;
+  palms.forEach((s) => { s.active = false; s.size = 0; });
+  heads.forEach((s) => { s.active = false; s.size = 0; });
+  running = true;
+  requestAnimationFrame(loop);
+}
+
+// 화면(스테이지) 비율에 맞는 크롭 영역. 폰/아이패드 세로 화면이면 가로 영상의 가운데를 세로로 잘라 씀
+let crop = { x: 0, y: 0, w: 1, h: 1 };
+function updateCrop() {
+  const stage = document.getElementById("stage");
+  const A = stage.clientWidth / stage.clientHeight;
+  const VW = video.videoWidth, VH = video.videoHeight;
+  if (!VW || !VH) return;
+  // 화면 비율까지 자르되, 원본의 30% 이상은 잘라내지 않음 (과도한 확대 방지)
+  // 못 채운 만큼은 object-fit: contain이 위아래/양옆 여백으로 처리
+  const MIN_KEEP = 0.7;
+  let cw, ch;
+  if (VW / VH > A) {
+    ch = VH;
+    cw = Math.min(VW, Math.max(Math.round(VH * A), Math.round(VW * MIN_KEEP)));
+  } else {
+    cw = VW;
+    ch = Math.min(VH, Math.max(Math.round(VW / A), Math.round(VH * MIN_KEEP)));
+  }
+  crop = { x: Math.round((VW - cw) / 2), y: Math.round((VH - ch) / 2), w: cw, h: ch };
+  if (canvas.width !== cw) canvas.width = cw;
+  if (canvas.height !== ch) canvas.height = ch;
+}
+
+let lastVW = 0, lastVH = 0;
+
+function loop() {
+  if (!running) return;
+  // 회전 시 iOS가 스트림 해상도를 스왑해주므로, 바뀐 걸 감지하면 크롭 재계산
+  if (video.videoWidth !== lastVW || video.videoHeight !== lastVH) {
+    lastVW = video.videoWidth;
+    lastVH = video.videoHeight;
+    updateCrop();
+  }
+  // 비디오의 크롭 영역을 셀피 모드로 좌우반전해서 그림
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, -crop.w, 0, crop.w, crop.h);
+  ctx.restore();
+
+  // detectForVideo는 currentTime 변경 시에만 호출 (중복 추론 방지)
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const now = performance.now();
+
+    // 랜드마크는 원본 프레임 기준이므로 크롭 오프셋을 빼고 미러링 보정
+    const VW = video.videoWidth, VH = video.videoHeight;
+    const mapX = (nx) => crop.w - (nx * VW - crop.x);
+    const mapY = (ny) => ny * VH - crop.y;
+
+    // 손 → 손바닥 슬롯
+    const handResult = handLandmarker.detectForVideo(video, now);
+    palms.forEach((s) => (s.active = false));
+    const hands = handResult.landmarks || [];
+    for (let i = 0; i < Math.min(hands.length, palms.length); i++) {
+      const lm = hands[i];
+      const wrist = { x: mapX(lm[0].x), y: mapY(lm[0].y) };
+      const midRoot = { x: mapX(lm[9].x), y: mapY(lm[9].y) };
+      const dist = Math.hypot(midRoot.x - wrist.x, midRoot.y - wrist.y);
+      updateSlot(palms[i], (wrist.x + midRoot.x) / 2, (wrist.y + midRoot.y) / 2, dist * 0.5);
+    }
+
+    // 얼굴 → 정수리 슬롯 (박스 좌표는 픽셀 단위)
+    const faceResult = faceDetector.detectForVideo(video, now);
+    heads.forEach((s) => (s.active = false));
+    const faces = faceResult.detections || [];
+    for (let i = 0; i < Math.min(faces.length, heads.length); i++) {
+      const box = faces[i].boundingBox;
+      const cx = crop.w - (box.originX - crop.x + box.width / 2);
+      // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
+      const topY = box.originY - crop.y - box.height * 0.25;
+      updateSlot(heads[i], cx, topY, box.width * 0.32);
+    }
+  }
+
+  const palmImgs = imagesFor("palm");
+  for (const s of palms) {
+    if (!s.active) continue;
+    const i = palms.indexOf(s);
+    if (palmImgs.length > 0) drawCustomImage(palmImgs[i % palmImgs.length], s, "palm");
+    else drawBird(s);
+  }
+
+  const headImgs = imagesFor("head");
+  for (const s of heads) {
+    if (!s.active) continue;
+    const i = heads.indexOf(s);
+    if (headImgs.length > 0) drawCustomImage(headImgs[i % headImgs.length], s, "head");
+    else drawCrackedEgg(s);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ---- 뒤로 가기: 카메라 끄고 시작 화면으로 ----
+document.getElementById("backBtn").addEventListener("click", () => {
+  if (recorder && recorder.state === "recording") recorder.stop();
+  running = false;
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach((t) => t.stop());
+    video.srcObject = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+  }
+  document.getElementById("controls").style.display = "none";
+  statusEl.classList.add("hidden");
+  setupEl.style.display = "flex";
+});
+
+// ---- 녹화: canvas.captureStream(30) + 마이크 + MediaRecorder ----
+let recorder = null;
+let chunks = [];
+let micStream = null;
+
+async function getMic() {
+  if (micStream) return micStream;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setStatus("마이크 권한이 없어 무음으로 녹화됩니다");
+    setTimeout(() => statusEl.classList.add("hidden"), 2500);
+  }
+  return micStream;
+}
+
+function pickMimeType() {
+  // 아이폰/아이패드 사진 앱에서 바로 재생되도록 mp4 우선
+  const candidates = [
+    "video/mp4;codecs=avc1",
+    "video/mp4",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+}
+
+recordBtn.addEventListener("click", async () => {
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+    return;
+  }
+  const mimeType = pickMimeType();
+  const stream = canvas.captureStream(30);
+  const mic = await getMic();
+  if (mic) for (const t of mic.getAudioTracks()) stream.addTrack(t);
+  try {
+    recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  } catch (e) {
+    setStatus("이 브라우저는 녹화를 지원하지 않습니다: " + e.message);
+    return;
+  }
+  chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.onstop = () => {
+    const type = recorder.mimeType || mimeType || "video/webm";
+    const ext = type.includes("mp4") ? "mp4" : "webm";
+    const blob = new Blob(chunks, { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hand-bird-${Date.now()}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    recordBtn.textContent = "● 녹화";
+    recordBtn.classList.remove("recording");
+  };
+  recorder.start();
+  recordBtn.textContent = "■ 정지";
+  recordBtn.classList.add("recording");
+});
+</script>
 </body>
 </html>
