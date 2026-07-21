@@ -17,8 +17,8 @@
     display: flex; align-items: center; justify-content: center;
   }
   #canvas {
-    max-width: 100%; max-height: 100%;
-    object-fit: contain;
+    width: 100%; height: 100%;
+    object-fit: cover;
   }
   #video { display: none; }
   #status {
@@ -730,9 +730,9 @@ async function init() {
     return;
   }
 
-  // 좌표 계산은 항상 캔버스 픽셀 기준 (CSS 크기와 다름)
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  // 카메라가 가로 영상을 줘도 화면 비율에 맞게 크롭 (좌표 계산은 항상 캔버스 픽셀 기준)
+  updateCrop();
+  window.addEventListener("resize", updateCrop);
 
   setStatus("손바닥이나 얼굴을 카메라에 보여주세요 ✋", false);
   setTimeout(() => statusEl.classList.add("hidden"), 2500);
@@ -744,12 +744,27 @@ async function init() {
   requestAnimationFrame(loop);
 }
 
+// 화면(스테이지) 비율에 맞는 크롭 영역. 폰/아이패드 세로 화면이면 가로 영상의 가운데를 세로로 잘라 씀
+let crop = { x: 0, y: 0, w: 1, h: 1 };
+function updateCrop() {
+  const stage = document.getElementById("stage");
+  const A = stage.clientWidth / stage.clientHeight;
+  const VW = video.videoWidth, VH = video.videoHeight;
+  if (!VW || !VH) return;
+  let cw, ch;
+  if (VW / VH > A) { ch = VH; cw = Math.round(VH * A); }
+  else { cw = VW; ch = Math.round(VW / A); }
+  crop = { x: Math.round((VW - cw) / 2), y: Math.round((VH - ch) / 2), w: cw, h: ch };
+  if (canvas.width !== cw) canvas.width = cw;
+  if (canvas.height !== ch) canvas.height = ch;
+}
+
 function loop() {
   if (!running) return;
-  // 비디오를 셀피 모드로 좌우반전해서 그림
+  // 비디오의 크롭 영역을 셀피 모드로 좌우반전해서 그림
   ctx.save();
   ctx.scale(-1, 1);
-  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, -crop.w, 0, crop.w, crop.h);
   ctx.restore();
 
   // detectForVideo는 currentTime 변경 시에만 호출 (중복 추론 방지)
@@ -757,28 +772,32 @@ function loop() {
     lastVideoTime = video.currentTime;
     const now = performance.now();
 
+    // 랜드마크는 원본 프레임 기준이므로 크롭 오프셋을 빼고 미러링 보정
+    const VW = video.videoWidth, VH = video.videoHeight;
+    const mapX = (nx) => crop.w - (nx * VW - crop.x);
+    const mapY = (ny) => ny * VH - crop.y;
+
     // 손 → 손바닥 슬롯
     const handResult = handLandmarker.detectForVideo(video, now);
     palms.forEach((s) => (s.active = false));
     const hands = handResult.landmarks || [];
     for (let i = 0; i < Math.min(hands.length, palms.length); i++) {
       const lm = hands[i];
-      // 캔버스가 미러링되어 있으므로 x는 (1 - x)로 보정
-      const wrist = { x: (1 - lm[0].x) * canvas.width, y: lm[0].y * canvas.height };
-      const midRoot = { x: (1 - lm[9].x) * canvas.width, y: lm[9].y * canvas.height };
+      const wrist = { x: mapX(lm[0].x), y: mapY(lm[0].y) };
+      const midRoot = { x: mapX(lm[9].x), y: mapY(lm[9].y) };
       const dist = Math.hypot(midRoot.x - wrist.x, midRoot.y - wrist.y);
       updateSlot(palms[i], (wrist.x + midRoot.x) / 2, (wrist.y + midRoot.y) / 2, dist * 0.5);
     }
 
-    // 얼굴 → 정수리 슬롯 (박스 윗변 중앙 = 정수리)
+    // 얼굴 → 정수리 슬롯 (박스 좌표는 픽셀 단위)
     const faceResult = faceDetector.detectForVideo(video, now);
     heads.forEach((s) => (s.active = false));
     const faces = faceResult.detections || [];
     for (let i = 0; i < Math.min(faces.length, heads.length); i++) {
       const box = faces[i].boundingBox;
-      const cx = canvas.width - (box.originX + box.width / 2); // 미러링 보정
+      const cx = crop.w - (box.originX - crop.x + box.width / 2);
       // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
-      const topY = box.originY - box.height * 0.25;
+      const topY = box.originY - crop.y - box.height * 0.25;
       updateSlot(heads[i], cx, topY, box.width * 0.32);
     }
   }
