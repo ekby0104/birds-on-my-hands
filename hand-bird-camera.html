@@ -97,9 +97,50 @@
     border-radius: 10px;
     font-size: 15px;
   }
-  #addBtn { background: #fff; border: 2px dashed #1a1712; width: 100%; max-width: 420px; }
+  #addBtn, #drawBtn { background: #fff; border: 2px dashed #1a1712; width: 100%; max-width: 420px; }
   #startBtn { background: #f5921e; color: #fff; font-size: 18px; padding: 14px 40px; }
   #setupHint { font-size: 12px; color: #a09880; }
+
+  /* ---- 그림판 모달 ---- */
+  #drawModal {
+    position: fixed; inset: 0;
+    z-index: 30;
+    background: #1a1712e6;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px;
+  }
+  #drawModal.open { display: flex; }
+  #drawCanvas {
+    width: min(90vw, 70vh, 480px);
+    height: min(90vw, 70vh, 480px);
+    border-radius: 16px;
+    /* 체커보드는 CSS 배경이라 저장되는 PNG는 투명 유지 */
+    background: repeating-conic-gradient(#e8e3d5 0 25%, #fbf8ee 0 50%) 0 0 / 24px 24px;
+    touch-action: none;
+  }
+  #drawTools, #drawActions {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+    max-width: min(90vw, 520px);
+  }
+  .swatch {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    padding: 0;
+  }
+  .swatch.sel { border-color: #fff; transform: scale(1.15); }
+  .tool {
+    padding: 8px 14px; font-size: 14px;
+    background: rgba(255,255,255,0.15); color: #fff;
+  }
+  .tool.sel { background: #fff; color: #1a1712; }
+  #sizeRange { width: 110px; }
+  #drawDone { background: #f5921e; color: #fff; }
+  #drawCancel { background: rgba(255,255,255,0.2); color: #fff; }
 </style>
 </head>
 <body>
@@ -110,10 +151,26 @@
      등록 없이 시작하면 기본 그림(손바닥=새, 정수리=깨진 계란)이 나와요.<br>
      배경이 투명한 PNG를 쓰면 제일 예뻐요.</p>
   <div id="pairList"></div>
-  <button id="addBtn">＋ 손그림 추가</button>
+  <button id="addBtn">＋ 손그림 추가 (사진)</button>
+  <button id="drawBtn">✏️ 직접 그리기</button>
   <button id="startBtn">카메라 시작</button>
   <div id="setupHint">같은 부위에 여러 장 등록하면 손마다 번갈아 나와요</div>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
+</div>
+
+<!-- 그림판 모달 -->
+<div id="drawModal">
+  <div id="drawTools">
+    <input type="range" id="sizeRange" min="4" max="48" value="14">
+    <button class="tool" id="eraserBtn">지우개</button>
+    <button class="tool" id="undoBtn">↩ 되돌리기</button>
+    <button class="tool" id="clearBtn">전체 지우기</button>
+  </div>
+  <canvas id="drawCanvas" width="640" height="640"></canvas>
+  <div id="drawActions">
+    <button id="drawCancel">취소</button>
+    <button id="drawDone">완료 → 등록</button>
+  </div>
 </div>
 
 <div id="stage"><canvas id="canvas"></canvas></div>
@@ -149,33 +206,166 @@ function setStatus(msg, hide = false) {
 // pairs: [{ img: HTMLImageElement, part: 'palm' | 'head' }]
 const pairs = [];
 
+function addPair(img) {
+  const pair = { img, part: "palm" };
+  pairs.push(pair);
+
+  const row = document.createElement("div");
+  row.className = "pair";
+  const thumb = document.createElement("img");
+  thumb.src = img.src;
+  const sel = document.createElement("select");
+  sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>`;
+  sel.addEventListener("change", () => (pair.part = sel.value));
+  const del = document.createElement("button");
+  del.className = "del";
+  del.textContent = "✕";
+  del.addEventListener("click", () => {
+    pairs.splice(pairs.indexOf(pair), 1);
+    row.remove();
+  });
+  row.append(thumb, sel, del);
+  pairListEl.appendChild(row);
+}
+
 addBtn.addEventListener("click", () => fileInput.click());
 
 fileInput.addEventListener("change", () => {
   for (const file of fileInput.files) {
     const img = new Image();
     img.src = URL.createObjectURL(file);
-    const pair = { img, part: "palm" };
-    pairs.push(pair);
-
-    const row = document.createElement("div");
-    row.className = "pair";
-    const thumb = document.createElement("img");
-    thumb.src = img.src;
-    const sel = document.createElement("select");
-    sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>`;
-    sel.addEventListener("change", () => (pair.part = sel.value));
-    const del = document.createElement("button");
-    del.className = "del";
-    del.textContent = "✕";
-    del.addEventListener("click", () => {
-      pairs.splice(pairs.indexOf(pair), 1);
-      row.remove();
-    });
-    row.append(thumb, sel, del);
-    pairListEl.appendChild(row);
+    addPair(img);
   }
   fileInput.value = "";
+});
+
+// ---- 그림판: 투명 배경 캔버스에 직접 그려서 등록 ----
+const drawModal = document.getElementById("drawModal");
+const drawCanvas = document.getElementById("drawCanvas");
+const dctx = drawCanvas.getContext("2d");
+const drawTools = document.getElementById("drawTools");
+const sizeRange = document.getElementById("sizeRange");
+const eraserBtn = document.getElementById("eraserBtn");
+
+const COLORS = ["#1a1712", "#fdf8e4", "#ffffff", "#e5484d", "#f5921e", "#f7b733", "#4caf6e", "#3b82d6", "#8b5a3c"];
+let penColor = COLORS[0];
+let erasing = false;
+
+COLORS.slice().reverse().forEach((c) => {
+  const b = document.createElement("button");
+  b.className = "swatch" + (c === penColor ? " sel" : "");
+  b.style.background = c;
+  b.addEventListener("click", () => {
+    penColor = c;
+    erasing = false;
+    eraserBtn.classList.remove("sel");
+    drawTools.querySelectorAll(".swatch").forEach((s) => s.classList.toggle("sel", s === b));
+  });
+  drawTools.prepend(b);
+});
+
+eraserBtn.addEventListener("click", () => {
+  erasing = !erasing;
+  eraserBtn.classList.toggle("sel", erasing);
+});
+
+// 되돌리기: 스트로크 시작마다 스냅샷 저장
+const undoStack = [];
+function snapshot() {
+  if (undoStack.length >= 20) undoStack.shift();
+  undoStack.push(dctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height));
+}
+document.getElementById("undoBtn").addEventListener("click", () => {
+  if (undoStack.length > 0) dctx.putImageData(undoStack.pop(), 0, 0);
+});
+document.getElementById("clearBtn").addEventListener("click", () => {
+  snapshot();
+  dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+});
+
+let drawing = false;
+let lastPt = null;
+
+function canvasPoint(e) {
+  const r = drawCanvas.getBoundingClientRect();
+  return {
+    x: ((e.clientX - r.left) / r.width) * drawCanvas.width,
+    y: ((e.clientY - r.top) / r.height) * drawCanvas.height,
+  };
+}
+
+drawCanvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  drawCanvas.setPointerCapture(e.pointerId);
+  snapshot();
+  drawing = true;
+  lastPt = canvasPoint(e);
+  strokeTo(lastPt); // 점 하나만 찍어도 보이게
+});
+drawCanvas.addEventListener("pointermove", (e) => {
+  if (!drawing) return;
+  strokeTo(canvasPoint(e));
+});
+["pointerup", "pointercancel"].forEach((ev) =>
+  drawCanvas.addEventListener(ev, () => { drawing = false; lastPt = null; })
+);
+
+function strokeTo(pt) {
+  const scale = drawCanvas.width / drawCanvas.getBoundingClientRect().width;
+  dctx.globalCompositeOperation = erasing ? "destination-out" : "source-over";
+  dctx.strokeStyle = penColor;
+  dctx.lineWidth = sizeRange.value * scale * (erasing ? 2 : 1);
+  dctx.lineCap = "round";
+  dctx.lineJoin = "round";
+  dctx.beginPath();
+  dctx.moveTo(lastPt.x, lastPt.y);
+  dctx.lineTo(pt.x, pt.y);
+  dctx.stroke();
+  lastPt = pt;
+}
+
+document.getElementById("drawBtn").addEventListener("click", () => {
+  dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  undoStack.length = 0;
+  drawModal.classList.add("open");
+});
+document.getElementById("drawCancel").addEventListener("click", () => {
+  drawModal.classList.remove("open");
+});
+// 그린 부분만 남기고 투명 여백을 잘라냄 (안 하면 여백 때문에 캐릭터가 작게 보임)
+function trimmedDrawing() {
+  const { width: W, height: H } = drawCanvas;
+  const data = dctx.getImageData(0, 0, W, H).data;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] > 8) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null; // 아무것도 안 그림
+  const pad = 12;
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+  maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
+  const tmp = document.createElement("canvas");
+  tmp.width = maxX - minX + 1;
+  tmp.height = maxY - minY + 1;
+  tmp.getContext("2d").drawImage(drawCanvas, -minX, -minY);
+  return tmp.toDataURL("image/png"); // 투명 배경 그대로 저장
+}
+
+document.getElementById("drawDone").addEventListener("click", () => {
+  const url = trimmedDrawing();
+  if (url) {
+    const img = new Image();
+    img.src = url;
+    img.onload = () => addPair(img);
+  }
+  drawModal.classList.remove("open");
 });
 
 startBtn.addEventListener("click", () => {
