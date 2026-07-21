@@ -18,7 +18,7 @@
   }
   #canvas {
     width: 100%; height: 100%;
-    object-fit: cover;
+    object-fit: contain;
   }
   #video { display: none; }
   #status {
@@ -751,9 +751,17 @@ function updateCrop() {
   const A = stage.clientWidth / stage.clientHeight;
   const VW = video.videoWidth, VH = video.videoHeight;
   if (!VW || !VH) return;
+  // 화면 비율까지 자르되, 원본의 30% 이상은 잘라내지 않음 (과도한 확대 방지)
+  // 못 채운 만큼은 object-fit: contain이 위아래/양옆 여백으로 처리
+  const MIN_KEEP = 0.7;
   let cw, ch;
-  if (VW / VH > A) { ch = VH; cw = Math.round(VH * A); }
-  else { cw = VW; ch = Math.round(VW / A); }
+  if (VW / VH > A) {
+    ch = VH;
+    cw = Math.min(VW, Math.max(Math.round(VH * A), Math.round(VW * MIN_KEEP)));
+  } else {
+    cw = VW;
+    ch = Math.min(VH, Math.max(Math.round(VW / A), Math.round(VH * MIN_KEEP)));
+  }
   crop = { x: Math.round((VW - cw) / 2), y: Math.round((VH - ch) / 2), w: cw, h: ch };
   if (canvas.width !== cw) canvas.width = cw;
   if (canvas.height !== ch) canvas.height = ch;
