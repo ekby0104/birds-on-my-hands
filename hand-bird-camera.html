@@ -659,8 +659,9 @@ function loop() {
     for (let i = 0; i < Math.min(faces.length, heads.length); i++) {
       const box = faces[i].boundingBox;
       const cx = canvas.width - (box.originX + box.width / 2); // 미러링 보정
-      const topY = box.originY;
-      updateSlot(heads[i], cx, topY, box.width * 0.5);
+      // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
+      const topY = box.originY - box.height * 0.25;
+      updateSlot(heads[i], cx, topY, box.width * 0.32);
     }
   }
 
