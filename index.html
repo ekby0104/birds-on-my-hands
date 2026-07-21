@@ -131,8 +131,8 @@
   .defItem canvas { width: 92px; height: 92px; }
   .defItem span { font-size: 12px; color: #555; }
 
-  /* ---- 그림판 모달 ---- */
-  #drawModal {
+  /* ---- 그림판/눈 위치 모달 ---- */
+  #drawModal, #eyeModal {
     position: fixed; inset: 0;
     z-index: 30;
     background: #fff;
@@ -143,7 +143,16 @@
     gap: 12px;
     padding: 16px;
   }
-  #drawModal.open { display: flex; }
+  #drawModal.open, #eyeModal.open { display: flex; }
+  #eyeCanvas {
+    max-width: min(90vw, 480px);
+    max-height: 62vh;
+    border: 1px solid #111;
+    background: repeating-conic-gradient(#f2f2f2 0 25%, #fff 0 50%) 0 0 / 24px 24px;
+    touch-action: none;
+  }
+  .eyeHint { font-size: 13px; color: #555; }
+  #eyeDone { background: #111; color: #fff; }
   #drawCanvas {
     width: min(90vw, 62vh, 480px);
     height: min(90vw, 62vh, 480px);
@@ -152,7 +161,7 @@
     background: repeating-conic-gradient(#f2f2f2 0 25%, #fff 0 50%) 0 0 / 24px 24px;
     touch-action: none;
   }
-  #drawTools, #brushRow, #drawActions {
+  #drawTools, #brushRow, #drawActions, #eyeActions {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
     max-width: min(92vw, 540px);
   }
@@ -192,7 +201,7 @@
     <div class="defItem"><canvas id="defEgg" width="140" height="140"></canvas><span>정수리 · 깨진 계란</span></div>
   </div>
   <button id="startBtn">카메라 시작</button>
-  <div id="setupHint">같은 부위에 여러 장 등록하면 손마다 번갈아 나와요</div>
+  <div id="setupHint">같은 부위에 여러 장 등록하면 손마다 번갈아 나와요 · 👁 버튼으로 눈 위치를 지정하면 깜빡여요</div>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
 </div>
 
@@ -216,6 +225,16 @@
   <div id="drawActions">
     <button id="drawCancel">취소</button>
     <button id="drawDone">완료 → 등록</button>
+  </div>
+</div>
+
+<!-- 눈 위치 지정 모달 -->
+<div id="eyeModal">
+  <div class="eyeHint">눈이 있는 곳을 탭하세요 · 다시 탭하면 제거돼요</div>
+  <canvas id="eyeCanvas" width="480" height="480"></canvas>
+  <div id="eyeActions">
+    <button id="eyeClear">전체 지우기</button>
+    <button id="eyeDone">완료</button>
   </div>
 </div>
 
@@ -254,7 +273,7 @@ function setStatus(msg, hide = false) {
 const pairs = [];
 
 function addPair(img) {
-  const pair = { img, part: "palm" };
+  const pair = { img, part: "palm", eyes: [] };
   pairs.push(pair);
 
   const row = document.createElement("div");
@@ -267,6 +286,11 @@ function addPair(img) {
   const sel = document.createElement("select");
   sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>`;
   sel.addEventListener("change", () => (pair.part = sel.value));
+  const eyeBtn = document.createElement("button");
+  eyeBtn.className = "del";
+  eyeBtn.textContent = "👁";
+  eyeBtn.title = "눈 위치 지정 (깜빡임)";
+  eyeBtn.addEventListener("click", () => openEyeModal(pair));
   const del = document.createElement("button");
   del.className = "del";
   del.textContent = "✕";
@@ -274,8 +298,110 @@ function addPair(img) {
     pairs.splice(pairs.indexOf(pair), 1);
     row.remove();
   });
-  row.append(thumb, sel, del);
+  row.append(thumb, sel, eyeBtn, del);
   pairListEl.appendChild(row);
+}
+
+// ---- 눈 위치 지정: 탭한 자리를 깜빡임 때 감은 눈으로 덮음 ----
+const eyeModal = document.getElementById("eyeModal");
+const eyeCanvas = document.getElementById("eyeCanvas");
+const eyeCtx = eyeCanvas.getContext("2d");
+let eyePair = null;
+
+function openEyeModal(pair) {
+  eyePair = pair;
+  const img = pair.img;
+  if (!img.complete || !img.naturalWidth) return;
+  const maxS = 480;
+  const ar = img.naturalWidth / img.naturalHeight;
+  eyeCanvas.width = ar >= 1 ? maxS : Math.round(maxS * ar);
+  eyeCanvas.height = ar >= 1 ? Math.round(maxS / ar) : maxS;
+  renderEyeCanvas();
+  eyeModal.classList.add("open");
+}
+
+function renderEyeCanvas() {
+  const w = eyeCanvas.width, h = eyeCanvas.height;
+  eyeCtx.clearRect(0, 0, w, h);
+  eyeCtx.drawImage(eyePair.img, 0, 0, w, h);
+  const R = 0.09 * Math.max(w, h);
+  for (const eye of eyePair.eyes) {
+    eyeCtx.beginPath();
+    eyeCtx.arc(eye.x * w, eye.y * h, R, 0, Math.PI * 2);
+    eyeCtx.strokeStyle = "#e5484d";
+    eyeCtx.lineWidth = 3;
+    eyeCtx.stroke();
+  }
+}
+
+eyeCanvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const r = eyeCanvas.getBoundingClientRect();
+  const nx = (e.clientX - r.left) / r.width;
+  const ny = (e.clientY - r.top) / r.height;
+  const near = eyePair.eyes.findIndex((eye) => Math.hypot(eye.x - nx, eye.y - ny) < 0.09);
+  if (near >= 0) eyePair.eyes.splice(near, 1);
+  else eyePair.eyes.push({ x: nx, y: ny });
+  renderEyeCanvas();
+});
+document.getElementById("eyeClear").addEventListener("click", () => {
+  eyePair.eyes.length = 0;
+  renderEyeCanvas();
+});
+document.getElementById("eyeDone").addEventListener("click", () => {
+  sampleEyeColors(eyePair);
+  eyeModal.classList.remove("open");
+});
+
+// 눈 주변 색을 링 샘플링해서 감은 눈 덮개 색으로 사용
+function sampleEyeColors(pair) {
+  const img = pair.img;
+  const S = 256;
+  const ar = img.naturalWidth / img.naturalHeight;
+  const w = ar >= 1 ? S : Math.round(S * ar);
+  const h = ar >= 1 ? Math.round(S / ar) : S;
+  const cnv = document.createElement("canvas");
+  cnv.width = w; cnv.height = h;
+  const cc = cnv.getContext("2d");
+  cc.drawImage(img, 0, 0, w, h);
+  const data = cc.getImageData(0, 0, w, h).data;
+  for (const eye of pair.eyes) {
+    const ex = eye.x * w, ey = eye.y * h;
+    const rOut = 0.09 * Math.max(w, h) * 1.5;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let a = 0; a < 32; a++) {
+      const ang = (a / 32) * Math.PI * 2;
+      const px = Math.round(ex + Math.cos(ang) * rOut);
+      const py = Math.round(ey + Math.sin(ang) * rOut);
+      if (px < 0 || py < 0 || px >= w || py >= h) continue;
+      const o = (py * w + px) * 4;
+      if (data[o + 3] < 40) continue;
+      r += data[o]; g += data[o + 1]; b += data[o + 2]; n++;
+    }
+    eye.color = n > 0
+      ? `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`
+      : "#fdf8e4";
+  }
+}
+
+// 감은 눈 그리기: 주변 색으로 덮고 가로선. (dx, dy)는 이미지 좌상단 좌표
+function drawEyesBlink(c, pair, dx, dy, w, h) {
+  const R = 0.09 * Math.max(w, h);
+  for (const eye of pair.eyes || []) {
+    const ex = dx + eye.x * w;
+    const ey = dy + eye.y * h;
+    c.beginPath();
+    c.arc(ex, ey, R, 0, Math.PI * 2);
+    c.fillStyle = eye.color || "#fdf8e4";
+    c.fill();
+    c.strokeStyle = "#1a1712";
+    c.lineWidth = Math.max(2, R * 0.28);
+    c.lineCap = "round";
+    c.beginPath();
+    c.moveTo(ex - R * 0.75, ey);
+    c.lineTo(ex + R * 0.75, ey);
+    c.stroke();
+  }
 }
 
 addBtn.addEventListener("click", () => fileInput.click());
@@ -520,8 +646,8 @@ startBtn.addEventListener("click", () => {
   init();
 });
 
-function imagesFor(part) {
-  return pairs.filter((p) => p.part === part && p.img.complete && p.img.naturalWidth > 0).map((p) => p.img);
+function pairsFor(part) {
+  return pairs.filter((p) => p.part === part && p.img.complete && p.img.naturalWidth > 0);
 }
 
 // ---- 부착 슬롯 (지터 제거용 lerp 스무딩 상태) ----
@@ -698,21 +824,22 @@ function drawCrackedEgg(c, slot) {
 }
 
 // ---- 등록된 손그림 이미지 드로잉 ----
-function drawCustomImage(img, slot, part) {
+function drawCustomImage(pair, slot, part) {
+  const img = pair.img;
   const qt = quantizedTime() / 1000;
   const bob = Math.sin(qt * 3.1 + slot.phase) * slot.size * 0.09;
   const tilt = Math.sin(qt * 1.7 + slot.phase) * 0.07;
   const h = slot.size * (part === "palm" ? 2.1 : 1.7);
   const w = h * (img.naturalWidth / img.naturalHeight);
+  const dx = -w / 2;
+  const dy = part === "palm" ? -h / 2 : -h + slot.size * 0.25; // 정수리는 아랫변이 얹히게
 
   ctx.save();
   ctx.translate(slot.x, slot.y + bob);
   ctx.rotate(tilt);
-  if (part === "palm") {
-    ctx.drawImage(img, -w / 2, -h / 2, w, h); // 손바닥 중심에
-  } else {
-    ctx.drawImage(img, -w / 2, -h + slot.size * 0.25, w, h); // 아랫변이 정수리에 얹히게
-  }
+  ctx.drawImage(img, dx, dy, w, h);
+  const blinkCycle = (qt * 1000 + slot.phase * 500) % 2700;
+  if (blinkCycle < 130) drawEyesBlink(ctx, pair, dx, dy, w, h);
   ctx.restore();
 }
 
@@ -737,6 +864,8 @@ function drawPairThumb(pair, i) {
   c.translate(S / 2, S / 2 + bob);
   c.rotate(tilt);
   c.drawImage(img, -w / 2, -h / 2, w, h);
+  const blinkCycle = (qt * 1000 + phase * 500) % 2700;
+  if (blinkCycle < 130) drawEyesBlink(c, pair, -w / 2, -h / 2, w, h);
   c.restore();
 }
 
@@ -913,19 +1042,19 @@ function loop() {
     }
   }
 
-  const palmImgs = imagesFor("palm");
+  const palmPairs = pairsFor("palm");
   for (const s of palms) {
     if (!s.active) continue;
     const i = palms.indexOf(s);
-    if (palmImgs.length > 0) drawCustomImage(palmImgs[i % palmImgs.length], s, "palm");
+    if (palmPairs.length > 0) drawCustomImage(palmPairs[i % palmPairs.length], s, "palm");
     else drawBird(ctx, s);
   }
 
-  const headImgs = imagesFor("head");
+  const headPairs = pairsFor("head");
   for (const s of heads) {
     if (!s.active) continue;
     const i = heads.indexOf(s);
-    if (headImgs.length > 0) drawCustomImage(headImgs[i % headImgs.length], s, "head");
+    if (headPairs.length > 0) drawCustomImage(headPairs[i % headPairs.length], s, "head");
     else drawCrackedEgg(ctx, s);
   }
 
