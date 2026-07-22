@@ -123,6 +123,15 @@
     margin-top: 8px;
   }
   #setupHint { font-size: 12px; color: #aaa; text-align: center; }
+  #feedbackBtn {
+    border: none;
+    background: none;
+    color: #aaa;
+    font-size: 13px;
+    text-decoration: underline;
+    padding: 4px;
+    width: auto;
+  }
   #inappWarn {
     border: 1px solid #e5484d;
     color: #e5484d;
@@ -222,6 +231,7 @@
   </div>
   <button id="startBtn">카메라 시작</button>
   <div id="setupHint">같은 부위에 여러 장 등록하면 손마다 번갈아 나와요 · 👁 버튼으로 눈 위치를 지정하면 깜빡여요</div>
+  <button id="feedbackBtn">💬 피드백 보내기</button>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
 </div>
 
@@ -701,6 +711,21 @@ document.getElementById("drawDone").addEventListener("click", () => {
     img.onload = () => addPair(img);
   }
   drawModal.classList.remove("open");
+});
+
+// ---- 피드백: 메일 앱 열기 (기기/인식 상태 정보 자동 첨부) ----
+document.getElementById("feedbackBtn").addEventListener("click", () => {
+  const info = [
+    "----- 아래 정보는 문제 해결에 사용돼요 (지워도 됨) -----",
+    "브라우저: " + navigator.userAgent,
+    "화면: " + window.innerWidth + "x" + window.innerHeight,
+    "인식 상태: " + (detectionSeen ? "정상 동작" : "인식 안 됨") + (delegateTried ? " · CPU 모드" : ""),
+    lastDetectError ? "마지막 오류: " + lastDetectError : "",
+  ].filter(Boolean).join("\n");
+  location.href =
+    "mailto:ekby0104@gmail.com" +
+    "?subject=" + encodeURIComponent("[Birds on My Hands] 피드백") +
+    "&body=" + encodeURIComponent("여기에 피드백을 적어주세요!\n\n\n" + info);
 });
 
 startBtn.addEventListener("click", () => {
