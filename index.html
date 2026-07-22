@@ -942,17 +942,8 @@ function drawBird(c, b) {
 
 // ---- 기본 그림 2: 계란 후라이 (정수리용) ----
 // slot.x = 머리 중심, slot.y = 정수리(머리 박스 윗변)
-function drawFriedEgg(c, slot) {
-  const qt = quantizedTime() / 1000;
-  const s = slot.size;
-  const tilt = Math.sin(qt * 1.3 + slot.phase) * 0.05;
-  const bob = Math.sin(qt * 2.6 + slot.phase) * s * 0.04;
-
-  c.save();
-  // 흰자 아랫면이 정수리에 살짝 얹히게
-  c.translate(slot.x, slot.y + s * 0.15 + bob);
-  c.rotate(tilt + (slot.extraRot || 0));
-
+// 계란 후라이 모양 (로컬 좌표, 원점 = 흰자 중심)
+function drawFriedEggShape(c, s) {
   c.lineWidth = Math.max(2.5, s * 0.1);
   c.lineJoin = "round";
   c.lineCap = "round";
@@ -983,76 +974,58 @@ function drawFriedEgg(c, slot) {
   c.arc(-0.08 * s, -0.24 * s, 0.09 * s, 0, Math.PI * 2);
   c.fillStyle = "#fffdf5";
   c.fill();
+}
 
+function drawFriedEgg(c, slot) {
+  const qt = quantizedTime() / 1000;
+  const s = slot.size;
+  const tilt = Math.sin(qt * 1.3 + slot.phase) * 0.05;
+  const bob = Math.sin(qt * 2.6 + slot.phase) * s * 0.04;
+
+  c.save();
+  // 흰자 아랫면이 정수리에 살짝 얹히게
+  c.translate(slot.x, slot.y + s * 0.15 + bob);
+  c.rotate(tilt + (slot.extraRot || 0));
+  drawFriedEggShape(c, s);
   c.restore();
 }
 
-// ---- 계란 흘러내림: 흰자 줄기 + 노른자가 얼굴을 타고 주르륵 (날계란 범벅) ----
+// ---- 계란 흘러내림: 계란이 얼굴을 타고 축 늘어지며 미끄러지고, 끈적한 자국이 남음 ----
 function drawEggMelt(c, slot, t) {
   const s = slot.size;
-  const fade = t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1; // 끝에서 서서히 사라짐
-  const qt = quantizedTime() / 1000;
+  const fade = t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
+  const slide = Math.pow(t, 1.5) * s * 3.4; // 처음엔 천천히, 점점 빨리 흘러내림
 
   c.save();
   c.globalAlpha = fade;
   c.lineJoin = "round";
   c.lineCap = "round";
 
-  // 정수리에 납작하게 퍼진 흰자
-  const spread = 1 + t * 0.7;
-  c.beginPath();
-  c.ellipse(slot.x, slot.y + s * 0.12, s * 1.15 * spread, Math.max(s * 0.12, s * 0.42 * (1 - t * 0.5)), slot.roll, 0, Math.PI * 2);
-  c.fillStyle = "#fffdf5";
-  c.fill();
-  c.lineWidth = Math.max(2, s * 0.08);
-  c.strokeStyle = "#1a1712";
-  c.stroke();
-
-  // 흰자 줄기들: 중력 방향(세로)으로 흘러내림, 길이가 제각각
-  const drips = [[-0.9, 0.9], [-0.45, 1.7], [0.5, 1.4], [0.95, 0.8]];
-  for (const [ox, lenM] of drips) {
-    const wob = Math.sin(qt * 2.1 + ox * 7) * s * 0.05;
-    const x = slot.x + ox * s * 1.1 + wob;
-    const topY = slot.y + s * 0.15;
-    const len = s * lenM * Math.min(1, t * 1.4);
-    c.beginPath();
-    c.moveTo(x, topY);
-    c.lineTo(x, topY + len);
-    c.lineWidth = s * 0.32; // 테두리 (굵게 먼저)
-    c.strokeStyle = "#1a1712";
-    c.stroke();
-    c.lineWidth = s * 0.22;
-    c.strokeStyle = "#fffdf5";
-    c.stroke();
-    c.beginPath();
-    c.arc(x, topY + len, s * 0.15, 0, Math.PI * 2);
-    c.fillStyle = "#fffdf5";
-    c.fill();
-    c.lineWidth = Math.max(2, s * 0.06);
-    c.strokeStyle = "#1a1712";
-    c.stroke();
+  // 지나간 자리에 남는 끈적한 자국 (흰자 2줄 + 노른자 1줄)
+  if (slide > s * 0.3) {
+    for (const [ox, wMul, color] of [
+      [-0.42, 0.17, "#fffdf5"],
+      [0.5, 0.13, "#fffdf5"],
+      [0.06, 0.11, "#f7b733"],
+    ]) {
+      const x = slot.x + ox * s;
+      c.beginPath();
+      c.moveTo(x, slot.y + s * 0.1);
+      c.lineTo(x, slot.y + s * 0.1 + slide);
+      c.lineWidth = s * wMul + Math.max(2, s * 0.07);
+      c.strokeStyle = "#1a1712";
+      c.stroke();
+      c.lineWidth = s * wMul;
+      c.strokeStyle = color;
+      c.stroke();
+    }
   }
 
-  // 노른자: 얼굴 가운데를 타고 주르륵
-  const yx = slot.x + s * 0.12;
-  const yolkY = slot.y + s * 0.2 + s * 2.3 * Math.min(1, t * 1.2);
-  c.beginPath();
-  c.moveTo(yx, slot.y + s * 0.12);
-  c.lineTo(yx, yolkY);
-  c.lineWidth = s * 0.28; // 테두리
-  c.strokeStyle = "#1a1712";
-  c.stroke();
-  c.lineWidth = s * 0.18;
-  c.strokeStyle = "#f7b733";
-  c.stroke();
-  c.beginPath();
-  c.arc(yx, yolkY, s * 0.36, 0, Math.PI * 2);
-  c.fillStyle = "#f7b733";
-  c.fill();
-  c.lineWidth = Math.max(2, s * 0.08);
-  c.strokeStyle = "#1a1712";
-  c.stroke();
-
+  // 계란 본체가 얼굴을 타고 미끄러지며 축 늘어짐
+  c.translate(slot.x, slot.y + s * 0.15 + slide);
+  c.rotate(slot.roll || 0);
+  c.scale(1 - t * 0.15, 1 + t * 0.35);
+  drawFriedEggShape(c, s);
   c.restore();
 }
 
