@@ -123,6 +123,20 @@
     margin-top: 8px;
   }
   #setupHint { font-size: 12px; color: #aaa; text-align: center; }
+  #inappWarn {
+    border: 1px solid #e5484d;
+    color: #e5484d;
+    padding: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: center;
+  }
+  #inappWarn button {
+    margin-top: 10px;
+    border-color: #e5484d;
+    color: #e5484d;
+    font-weight: 700;
+  }
   #defaultRow { display: flex; gap: 8px; }
   .defItem {
     flex: 1;
@@ -189,6 +203,10 @@
 <body>
 <!-- 시작 화면: 손그림 + 부위 페어 등록 -->
 <div id="setup">
+  <div id="inappWarn" hidden>
+    카카오톡·인스타 등 앱 안의 브라우저에서는 손 인식이 잘 안 돼요.<br>
+    <button id="openExternal">Chrome / 기본 브라우저로 열기</button>
+  </div>
   <h1>Birds on<br>My Hands</h1>
   <p>손그림을 등록하고 어느 부위에 붙일지 고르세요.<br>
      등록 없이 시작하면 기본 그림(손바닥=새, 정수리=계란 후라이)이 나와요.<br>
@@ -274,6 +292,28 @@ function setStatus(msg, hide = false) {
 // 기기별 문제 진단용: 잡히지 않은 오류를 화면에 표시
 window.addEventListener("error", (e) => setStatus("오류: " + (e.message || e.type)));
 window.addEventListener("unhandledrejection", (e) => setStatus("오류: " + (e.reason?.message || e.reason)));
+
+// ---- 인앱 브라우저(카톡/인스타 등) 감지: 손 인식이 안 되므로 외부 브라우저 안내 ----
+const UA = navigator.userAgent;
+const isKakao = /KAKAOTALK/i.test(UA);
+const isInApp = isKakao || /Instagram|FBAN|FBAV|Line\/|NAVER\(inapp/i.test(UA);
+if (isInApp) {
+  document.getElementById("inappWarn").hidden = false;
+  document.getElementById("openExternal").addEventListener("click", () => {
+    if (isKakao) {
+      // 카톡 전용: 외부 브라우저로 여는 스킴
+      location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(location.href);
+    } else if (/Android/i.test(UA)) {
+      location.href =
+        "intent://" + location.host + location.pathname +
+        "#Intent;scheme=https;package=com.android.chrome;end";
+    } else {
+      // iOS 기타 인앱: 자동으로 못 열어서 주소 복사 안내
+      navigator.clipboard?.writeText(location.href);
+      alert("주소를 복사했어요. Safari에 붙여넣어 열어주세요!");
+    }
+  });
+}
 
 // ---- 손그림 + 부위 페어 등록 ----
 // pairs: [{ img: HTMLImageElement, part: 'palm' | 'head' }]
