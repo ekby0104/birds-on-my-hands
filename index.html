@@ -990,45 +990,6 @@ function drawFriedEgg(c, slot) {
   c.restore();
 }
 
-// ---- 계란 흘러내림: 계란이 얼굴을 타고 축 늘어지며 미끄러지고, 끈적한 자국이 남음 ----
-function drawEggMelt(c, slot, t) {
-  const s = slot.size;
-  const fade = t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
-  const slide = Math.pow(t, 1.5) * s * 3.4; // 처음엔 천천히, 점점 빨리 흘러내림
-
-  c.save();
-  c.globalAlpha = fade;
-  c.lineJoin = "round";
-  c.lineCap = "round";
-
-  // 지나간 자리에 남는 끈적한 자국 (흰자 2줄 + 노른자 1줄)
-  if (slide > s * 0.3) {
-    for (const [ox, wMul, color] of [
-      [-0.42, 0.17, "#fffdf5"],
-      [0.5, 0.13, "#fffdf5"],
-      [0.06, 0.11, "#f7b733"],
-    ]) {
-      const x = slot.x + ox * s;
-      c.beginPath();
-      c.moveTo(x, slot.y + s * 0.1);
-      c.lineTo(x, slot.y + s * 0.1 + slide);
-      c.lineWidth = s * wMul + Math.max(2, s * 0.07);
-      c.strokeStyle = "#1a1712";
-      c.stroke();
-      c.lineWidth = s * wMul;
-      c.strokeStyle = color;
-      c.stroke();
-    }
-  }
-
-  // 계란 본체가 얼굴을 타고 미끄러지며 축 늘어짐
-  c.translate(slot.x, slot.y + s * 0.15 + slide);
-  c.rotate(slot.roll || 0);
-  c.scale(1 - t * 0.15, 1 + t * 0.35);
-  drawFriedEggShape(c, s);
-  c.restore();
-}
-
 // ---- 종이 구김 효과: 격자를 삼각형으로 쪼개 흐트러뜨리고 면마다 명암 ----
 const crumpleCanvas = document.createElement("canvas");
 const crumpleCtx = crumpleCanvas.getContext("2d");
@@ -1593,26 +1554,14 @@ function loop() {
       s.yOff += s.fallV * f;
       if (s.yOff >= 0) { s.yOff = 0; s.fallV = 0; s.eggState = "on"; s.eggBornAt = nowMs; }
     } else if (s.eggState === "on") {
-      if (!s.eggBornAt) s.eggBornAt = nowMs;
-      // 3초 지나면 흘러내림 (기본 계란일 때만) — 그 전에 고개를 흔들어 옆 사람에게 넘길 것!
-      if (headPairs.length === 0 && nowMs - s.eggBornAt > 3000) {
-        s.eggState = "melting";
-        s.meltT = 0;
-      } else {
-        s.attachV += Math.sin(s.roll) * s.size * 0.025 * f;
-        s.attachV *= Math.pow(0.93, f);
-        s.attachX += s.attachV * f;
-        if (Math.abs(s.attachX) > s.size * 1.9) {
-          s.eggState = "falling";
-          s.fallV = 0;
-          s.attachV *= 1.6; // 던지는 느낌으로 가속
-        }
+      s.attachV += Math.sin(s.roll) * s.size * 0.025 * f;
+      s.attachV *= Math.pow(0.93, f);
+      s.attachX += s.attachV * f;
+      if (Math.abs(s.attachX) > s.size * 1.9) {
+        s.eggState = "falling";
+        s.fallV = 0;
+        s.attachV *= 1.6; // 던지는 느낌으로 가속
       }
-    } else if (s.eggState === "melting") {
-      s.meltT += dt / 5; // 5초에 걸쳐 천천히 흘러내림
-      drawEggMelt(ctx, s, Math.min(1, s.meltT));
-      if (s.meltT >= 1) { s.eggState = "gone"; s.respawnAt = nowMs + 2000; s.eggBornAt = 0; }
-      continue; // 흘러내리는 동안은 일반 계란 드로잉 생략
     } else if (s.eggState === "falling") {
       s.fallV += s.size * 0.05 * f;
       s.yOff += s.fallV * f;
