@@ -1609,7 +1609,7 @@ function loop() {
         }
       }
     } else if (s.eggState === "melting") {
-      s.meltT += dt / 2.5;
+      s.meltT += dt / 5; // 5초에 걸쳐 천천히 흘러내림
       drawEggMelt(ctx, s, Math.min(1, s.meltT));
       if (s.meltT >= 1) { s.eggState = "gone"; s.respawnAt = nowMs + 2000; s.eggBornAt = 0; }
       continue; // 흘러내리는 동안은 일반 계란 드로잉 생략
