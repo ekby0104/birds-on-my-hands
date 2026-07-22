@@ -293,7 +293,8 @@
 <video id="video" playsinline muted autoplay></video>
 <div id="status" class="hidden"></div>
 <div id="controls">
-  <button id="backBtn">← 처음으로</button>
+  <button id="backBtn">←</button>
+  <button id="flipBtn">🔄 전환</button>
   <button id="photoBtn">📸 사진</button>
   <button id="recordBtn">● 녹화</button>
 </div>
@@ -1162,12 +1163,14 @@ let running = false;
 // 카메라 열기. iOS는 카메라 모드를 가로 기준(1280x720)으로 고른 뒤 기기 방향에 맞춰
 // 알아서 회전해주므로, 세로 비율을 강제로 요청하면 오히려 가로 영상이 온다.
 // 표준 모드를 요청하고, 세로 화면인데 가로 영상이 오면 브라우저 기본 설정으로 재시도.
+let facing = "user"; // "user"=전면(미러링), "environment"=후면
+
 async function openCamera() {
   if (video.srcObject) video.srcObject.getTracks().forEach((t) => t.stop());
   const portrait = window.innerHeight >= window.innerWidth;
   const tries = [
-    { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-    { facingMode: "user" },
+    { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: facing },
   ];
   let stream = null;
   for (let i = 0; i < tries.length; i++) {
@@ -1333,10 +1336,14 @@ function loop() {
     lastVH = video.videoHeight;
     updateCrop();
   }
-  // 비디오의 크롭 영역을 셀피 모드로 좌우반전해서 그림
+  // 전면 카메라만 셀피 모드로 좌우반전해서 그림 (후면은 그대로)
   ctx.save();
-  ctx.scale(-1, 1);
-  ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, -crop.w, 0, crop.w, crop.h);
+  if (facing === "user") {
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, -crop.w, 0, crop.w, crop.h);
+  } else {
+    ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+  }
   ctx.restore();
 
   // detectForVideo는 currentTime 변경 시에만 호출 (중복 추론 방지)
@@ -1345,9 +1352,11 @@ function loop() {
     const now = performance.now();
     try {
 
-    // 랜드마크는 원본 프레임 기준이므로 크롭 오프셋을 빼고 미러링 보정
+    // 랜드마크는 원본 프레임 기준이므로 크롭 오프셋을 빼고, 전면일 때만 미러링 보정
     const VW = video.videoWidth, VH = video.videoHeight;
-    const mapX = (nx) => crop.w - (nx * VW - crop.x);
+    const mapX = facing === "user"
+      ? (nx) => crop.w - (nx * VW - crop.x)
+      : (nx) => nx * VW - crop.x;
     const mapY = (ny) => ny * VH - crop.y;
 
     // 손 → 손바닥 슬롯 (등장/퇴장 비행은 아래 상태 머신에서 처리)
@@ -1408,7 +1417,8 @@ function loop() {
     }
     for (const det of faces) {
       const box = det.boundingBox;
-      const cx = crop.w - (box.originX - crop.x + box.width / 2);
+      const bcx2 = box.originX - crop.x + box.width / 2;
+      const cx = facing === "user" ? crop.w - bcx2 : bcx2;
       // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
       const topY = box.originY - crop.y - box.height * 0.25;
       // 이전 프레임 위치가 가장 가까운 슬롯을 재사용 → 계란 상태가 같은 얼굴을 따라감
@@ -1691,6 +1701,24 @@ function sfxCrunch() {
   src.connect(f); f.connect(g); g.connect(sfxGain);
   src.start();
 }
+
+// ---- 🔄 카메라 전환 (전면 ↔ 후면) ----
+let flipping = false;
+document.getElementById("flipBtn").addEventListener("click", async () => {
+  if (flipping || !running) return;
+  flipping = true;
+  const prev = facing;
+  facing = facing === "user" ? "environment" : "user";
+  try {
+    await openCamera();
+  } catch (e) {
+    facing = prev; // 실패하면 원래 카메라로 복귀
+    try { await openCamera(); } catch (e2) {}
+    setStatus("카메라 전환 실패: " + e.message);
+    setTimeout(() => statusEl.classList.add("hidden"), 2000);
+  }
+  flipping = false;
+});
 
 // ---- 뒤로 가기: 카메라 끄고 시작 화면으로 ----
 document.getElementById("backBtn").addEventListener("click", () => {
