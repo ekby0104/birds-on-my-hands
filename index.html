@@ -1431,17 +1431,44 @@ function loop() {
     // 얼굴 → 정수리 슬롯 (박스 좌표는 픽셀 단위)
     const faceResult = faceDetector.detectForVideo(video, now);
     heads.forEach((s) => (s.active = false));
-    const faces = faceResult.detections || [];
-    for (let i = 0; i < Math.min(faces.length, heads.length); i++) {
-      const box = faces[i].boundingBox;
+    const rawFaces = faceResult.detections || [];
+    // 한 얼굴에 박스가 두 개 잡히는 중복 검출 제거
+    const faces = [];
+    for (const det of rawFaces) {
+      const b = det.boundingBox;
+      const bcx = b.originX + b.width / 2, bcy = b.originY + b.height / 2;
+      const dup = faces.some((o) => {
+        const ob = o.boundingBox;
+        return Math.hypot(ob.originX + ob.width / 2 - bcx, ob.originY + ob.height / 2 - bcy) <
+          Math.max(b.width, ob.width) * 0.6;
+      });
+      if (!dup) faces.push(det);
+      if (faces.length >= MAX_HEADS) break;
+    }
+    for (const det of faces) {
+      const box = det.boundingBox;
       const cx = crop.w - (box.originX - crop.x + box.width / 2);
       // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
       const topY = box.originY - crop.y - box.height * 0.25;
-      updateSlot(heads[i], cx, topY, box.width * 0.32);
+      // 이전 프레임 위치가 가장 가까운 슬롯을 재사용 → 계란 상태가 같은 얼굴을 따라감
+      let s = null, bestD = Infinity;
+      for (const cand of heads) {
+        if (cand.active || cand.size === 0) continue;
+        const d = Math.hypot(cand.x - cx, cand.y - topY);
+        if (d < bestD) { bestD = d; s = cand; }
+      }
+      if (!s || bestD > box.width * 1.5) {
+        s = heads.find((c2) => !c2.active && c2.size === 0) || heads.find((c2) => !c2.active);
+        if (!s) continue;
+        // 새 얼굴이면 계란도 처음부터
+        s.size = 0; s.kp = null; s.roll = 0;
+        s.eggState = "on"; s.eggBornAt = 0; s.meltT = 0;
+        s.attachX = 0; s.attachV = 0; s.yOff = 0; s.fallV = 0;
+      }
+      updateSlot(s, cx, topY, box.width * 0.32);
       // 고개 기울기(roll)와 얼굴 부위 키포인트 (0:오른눈 1:왼눈 2:코 3:입 4:오른귀 5:왼귀)
-      const kp = faces[i].keypoints;
+      const kp = det.keypoints;
       if (kp && kp.length >= 6) {
-        const s = heads[i];
         const P = (k) => ({ x: mapX(k.x), y: mapY(k.y) });
         const eyeR = P(kp[0]), eyeL = P(kp[1]), nose = P(kp[2]);
         const mouth = P(kp[3]), earR = P(kp[4]), earL = P(kp[5]);
