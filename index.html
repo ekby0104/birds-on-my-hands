@@ -271,6 +271,10 @@ function setStatus(msg, hide = false) {
   statusEl.classList.toggle("hidden", hide);
 }
 
+// 기기별 문제 진단용: 잡히지 않은 오류를 화면에 표시
+window.addEventListener("error", (e) => setStatus("오류: " + (e.message || e.type)));
+window.addEventListener("unhandledrejection", (e) => setStatus("오류: " + (e.reason?.message || e.reason)));
+
 // ---- 손그림 + 부위 페어 등록 ----
 // pairs: [{ img: HTMLImageElement, part: 'palm' | 'head' }]
 const pairs = [];
@@ -287,7 +291,9 @@ function addPair(img) {
   thumb.height = 104;
   pair.thumbCtx = thumb.getContext("2d");
   const sel = document.createElement("select");
-  sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>`;
+  sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>
+    <option value="eye">눈 위 (양쪽)</option><option value="nose">코 위</option><option value="mouth">입 위</option>
+    <option value="cheek">볼 위 (양쪽)</option><option value="ear">귀 위 (양쪽)</option>`;
   sel.addEventListener("change", () => (pair.part = sel.value));
   const eyeBtn = document.createElement("button");
   eyeBtn.className = "del";
@@ -1167,7 +1173,7 @@ async function init() {
     s.detected = false; s.fist = 0; s.wasV = false; s.flying = false;
   });
   heads.forEach((s) => {
-    s.active = false; s.size = 0; s.roll = 0;
+    s.active = false; s.size = 0; s.roll = 0; s.kp = null;
     s.attachX = 0; s.attachV = 0; s.yOff = 0; s.fallV = 0; s.eggState = "on";
   });
   running = true;
@@ -1272,15 +1278,38 @@ function loop() {
       // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
       const topY = box.originY - crop.y - box.height * 0.25;
       updateSlot(heads[i], cx, topY, box.width * 0.32);
-      // 고개 기울기(roll): 양쪽 눈 키포인트의 기울기
+      // 고개 기울기(roll)와 얼굴 부위 키포인트 (0:오른눈 1:왼눈 2:코 3:입 4:오른귀 5:왼귀)
       const kp = faces[i].keypoints;
-      if (kp && kp.length >= 2) {
-        const e0 = { x: mapX(kp[0].x), y: mapY(kp[0].y) };
-        const e1 = { x: mapX(kp[1].x), y: mapY(kp[1].y) };
-        let ang = Math.atan2(e1.y - e0.y, e1.x - e0.x);
+      if (kp && kp.length >= 6) {
+        const s = heads[i];
+        const P = (k) => ({ x: mapX(k.x), y: mapY(k.y) });
+        const eyeR = P(kp[0]), eyeL = P(kp[1]), nose = P(kp[2]);
+        const mouth = P(kp[3]), earR = P(kp[4]), earL = P(kp[5]);
+        let ang = Math.atan2(eyeL.y - eyeR.y, eyeL.x - eyeR.x);
         if (ang > Math.PI / 2) ang -= Math.PI;
         if (ang < -Math.PI / 2) ang += Math.PI;
-        heads[i].roll = lerp(heads[i].roll, ang, 0.3);
+        s.roll = lerp(s.roll, ang, 0.3);
+        // 볼: 코와 귀 사이, 눈과 입 사이 높이로 추정
+        const targetKp = {
+          eye: [eyeR, eyeL],
+          nose: [nose],
+          mouth: [mouth],
+          ear: [earR, earL],
+          cheek: [
+            { x: (earR.x + nose.x) / 2, y: (eyeR.y + mouth.y) / 2 },
+            { x: (earL.x + nose.x) / 2, y: (eyeL.y + mouth.y) / 2 },
+          ],
+        };
+        if (!s.kp) {
+          s.kp = targetKp;
+        } else {
+          for (const key in targetKp) {
+            targetKp[key].forEach((p, j) => {
+              s.kp[key][j].x = lerp(s.kp[key][j].x, p.x, SMOOTH_K);
+              s.kp[key][j].y = lerp(s.kp[key][j].y, p.y, SMOOTH_K);
+            });
+          }
+        }
       }
     }
 
@@ -1391,7 +1420,38 @@ function loop() {
     else drawFriedEgg(ctx, ds);
   }
 
+  // ---- 얼굴 부위(눈/코/입/볼/귀)에 등록한 그림 부착 ----
+  for (const s of heads) {
+    if (!s.active || !s.kp) continue;
+    for (const part in FACE_PART_SIZE) {
+      const pp = pairsFor(part);
+      if (pp.length === 0) continue;
+      s.kp[part].forEach((pt, j) => drawFacePart(pp[j % pp.length], pt, s, FACE_PART_SIZE[part], j));
+    }
+  }
+
   requestAnimationFrame(loop);
+}
+
+// 얼굴 부위별 그림 크기 (얼굴 크기 대비 배율)
+const FACE_PART_SIZE = { eye: 0.85, nose: 0.95, mouth: 1.05, cheek: 0.85, ear: 0.95 };
+
+function drawFacePart(pair, pt, slot, mult, idx) {
+  const img = pair.img;
+  if (!img.complete || !img.naturalWidth) return;
+  const qt = quantizedTime() / 1000;
+  const phase = slot.phase + idx * 2.3;
+  const bob = Math.sin(qt * 3.1 + phase) * slot.size * 0.04;
+  const tilt = Math.sin(qt * 1.7 + phase) * 0.05;
+  const h = slot.size * mult;
+  const w = h * (img.naturalWidth / img.naturalHeight);
+  ctx.save();
+  ctx.translate(pt.x, pt.y + bob);
+  ctx.rotate((slot.roll || 0) + tilt);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  const blinkCycle = (qt * 1000 + phase * 500) % 2700;
+  if (blinkCycle < 130) drawEyesBlink(ctx, pair, -w / 2, -h / 2, w, h);
+  ctx.restore();
 }
 
 // ---- 효과음: WebAudio로 합성 (파일 없음). 녹화에도 섞여 들어감 ----
