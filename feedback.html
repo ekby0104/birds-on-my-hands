@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>피드백 — Birds on My Hands</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐦</text></svg>">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #fff;
+    color: #111;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Helvetica Neue", sans-serif;
+    padding: 48px 20px 80px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  body > * { width: 100%; max-width: 560px; }
+  h1 {
+    font-size: clamp(30px, 8vw, 44px);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  .sub { font-size: 13px; color: #888; margin-bottom: 8px; }
+  .divider {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+    margin: 10px 0 4px;
+  }
+  .divider::after { content: ""; flex: 1; border-top: 1px solid #111; }
+  .card {
+    border: 1px solid #111;
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card .text { font-size: 15px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .card .meta {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    font-size: 11px; color: #999;
+    border-top: 1px solid #eee;
+    padding-top: 8px;
+  }
+  .badge {
+    border: 1px solid #ddd;
+    padding: 2px 7px;
+    color: #777;
+  }
+  .badge.warn { border-color: #e5484d; color: #e5484d; }
+  .empty { color: #aaa; font-size: 14px; text-align: center; padding: 40px 0; }
+  #keyBox { display: none; flex-direction: column; gap: 10px; }
+  #keyBox input {
+    border: 1px solid #111; border-radius: 0;
+    padding: 12px; font-size: 15px;
+  }
+  #keyBox button {
+    border: 1px solid #111; border-radius: 0;
+    background: #111; color: #fff;
+    padding: 12px; font-size: 14px; font-weight: 700;
+    cursor: pointer; letter-spacing: 0.08em;
+  }
+  a.back { font-size: 13px; color: #999; }
+</style>
+</head>
+<body>
+<h1>Feedback</h1>
+<div class="sub">Birds on My Hands에 도착한 피드백</div>
+<a class="back" href="./">← 앱으로 돌아가기</a>
+
+<div id="keyBox">
+  <input id="keyInput" type="password" placeholder="조회 키를 입력하세요">
+  <button id="keyGo">확인</button>
+</div>
+
+<div class="divider" id="countLabel"></div>
+<div id="list"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const key = params.get("key") || "";
+
+function browserLabel(ua) {
+  const os = /iPhone/.test(ua) ? "아이폰" : /iPad/.test(ua) ? "아이패드"
+    : /Android/.test(ua) ? "안드로이드" : /Mac/.test(ua) ? "맥" : /Windows/.test(ua) ? "윈도우" : "";
+  const br = /KAKAOTALK/i.test(ua) ? "카톡 브라우저" : /SamsungBrowser/.test(ua) ? "삼성 인터넷"
+    : /CriOS|Chrome/.test(ua) ? "Chrome" : /Safari/.test(ua) ? "Safari" : "";
+  return [os, br].filter(Boolean).join(" · ") || "알 수 없는 기기";
+}
+
+function detectLabel(d) {
+  const parts = [];
+  if (/none/.test(d)) parts.push({ text: "인식 안 됨", warn: true });
+  else if (/ok/.test(d)) parts.push({ text: "인식 정상" });
+  if (/cpu/.test(d)) parts.push({ text: "CPU 모드" });
+  if (/err/.test(d)) parts.push({ text: "오류 발생", warn: true });
+  return parts;
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function load() {
+  const listEl = document.getElementById("list");
+  const countEl = document.getElementById("countLabel");
+  let res;
+  try {
+    res = await fetch("/api/feedback" + (key ? "?key=" + encodeURIComponent(key) : ""));
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty">서버에 연결할 수 없어요</div>';
+    return;
+  }
+  if (res.status === 403) {
+    document.getElementById("keyBox").style.display = "flex";
+    countEl.textContent = "조회 키 필요";
+    return;
+  }
+  const items = await res.json();
+  items.reverse(); // 최신이 위로
+  countEl.textContent = `총 ${items.length}개`;
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="empty">아직 도착한 피드백이 없어요 🐦</div>';
+    return;
+  }
+  for (const it of items) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const text = document.createElement("div");
+    text.className = "text";
+    text.textContent = it.text;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const badges = [
+      { text: fmtDate(it.at) },
+      { text: browserLabel(it.ua || "") },
+      it.screen ? { text: it.screen } : null,
+      ...detectLabel(it.detect || ""),
+    ].filter(Boolean);
+    for (const b of badges) {
+      const el = document.createElement("span");
+      el.className = "badge" + (b.warn ? " warn" : "");
+      el.textContent = b.text;
+      meta.appendChild(el);
+    }
+    card.append(text, meta);
+    listEl.appendChild(card);
+  }
+}
+
+document.getElementById("keyGo").addEventListener("click", () => {
+  location.search = "?key=" + encodeURIComponent(document.getElementById("keyInput").value);
+});
+document.getElementById("keyInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("keyGo").click();
+});
+
+load();
+</script>
+</body>
+</html>

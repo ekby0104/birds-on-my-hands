@@ -77,6 +77,7 @@ const server = http.createServer((req, res) => {
   // 정적 파일
   let p = decodeURIComponent(url.pathname);
   if (p === "/" || p === "") p = "/index.html";
+  if (p === "/feedback") p = "/feedback.html"; // 피드백 조회 페이지
   const file = path.normalize(path.join(ROOT, p));
   if (!file.startsWith(ROOT)) {
     res.writeHead(403);
