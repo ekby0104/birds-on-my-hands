@@ -1,4 +1,4 @@
 {
   "name": "hand-bird",
-  "scripts": { "start": "npx serve -l $PORT" }
+  "scripts": { "start": "node server.js" }
 }

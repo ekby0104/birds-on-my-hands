@@ -156,8 +156,19 @@
   .defItem canvas { width: 92px; height: 92px; }
   .defItem span { font-size: 12px; color: #555; }
 
+  #fbText {
+    width: min(90vw, 480px);
+    border: 1px solid #111;
+    border-radius: 0;
+    padding: 12px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  #fbSend { background: #111; color: #fff; }
+
   /* ---- 그림판/눈 위치 모달 ---- */
-  #drawModal, #eyeModal {
+  #drawModal, #eyeModal, #fbModal {
     position: fixed; inset: 0;
     z-index: 30;
     background: #fff;
@@ -168,7 +179,7 @@
     gap: 12px;
     padding: 16px;
   }
-  #drawModal.open, #eyeModal.open { display: flex; }
+  #drawModal.open, #eyeModal.open, #fbModal.open { display: flex; }
   #eyeCanvas {
     max-width: min(90vw, 480px);
     max-height: 62vh;
@@ -186,7 +197,7 @@
     background: repeating-conic-gradient(#f2f2f2 0 25%, #fff 0 50%) 0 0 / 24px 24px;
     touch-action: none;
   }
-  #drawTools, #brushRow, #drawActions, #eyeActions {
+  #drawTools, #brushRow, #drawActions, #eyeActions, #fbActions {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
     max-width: min(92vw, 540px);
   }
@@ -255,6 +266,16 @@
   <div id="drawActions">
     <button id="drawCancel">취소</button>
     <button id="drawDone">완료 → 등록</button>
+  </div>
+</div>
+
+<!-- 피드백 모달 -->
+<div id="fbModal">
+  <div class="eyeHint">버그 제보, 아이디어, 감상 뭐든 환영해요!</div>
+  <textarea id="fbText" rows="6" placeholder="예: 갤럭시 크롬에서 새가 안 나와요 / 강아지 스티커도 있으면 좋겠어요"></textarea>
+  <div id="fbActions">
+    <button id="fbCancel">취소</button>
+    <button id="fbSend">보내기</button>
   </div>
 </div>
 
@@ -713,19 +734,35 @@ document.getElementById("drawDone").addEventListener("click", () => {
   drawModal.classList.remove("open");
 });
 
-// ---- 피드백: 메일 앱 열기 (기기/인식 상태 정보 자동 첨부) ----
-document.getElementById("feedbackBtn").addEventListener("click", () => {
-  const info = [
-    "----- 아래 정보는 문제 해결에 사용돼요 (지워도 됨) -----",
-    "브라우저: " + navigator.userAgent,
-    "화면: " + window.innerWidth + "x" + window.innerHeight,
-    "인식 상태: " + (detectionSeen ? "정상 동작" : "인식 안 됨") + (delegateTried ? " · CPU 모드" : ""),
-    lastDetectError ? "마지막 오류: " + lastDetectError : "",
-  ].filter(Boolean).join("\n");
-  location.href =
-    "mailto:ekby0104@gmail.com" +
-    "?subject=" + encodeURIComponent("[Birds on My Hands] 피드백") +
-    "&body=" + encodeURIComponent("여기에 피드백을 적어주세요!\n\n\n" + info);
+// ---- 피드백: 서버 DB(/api/feedback)에 저장. 기기/인식 상태 정보 자동 첨부 ----
+const fbModal = document.getElementById("fbModal");
+const fbText = document.getElementById("fbText");
+document.getElementById("feedbackBtn").addEventListener("click", () => fbModal.classList.add("open"));
+document.getElementById("fbCancel").addEventListener("click", () => fbModal.classList.remove("open"));
+document.getElementById("fbSend").addEventListener("click", async () => {
+  const text = fbText.value.trim();
+  if (!text) return;
+  const payload = {
+    text,
+    ua: navigator.userAgent,
+    screen: window.innerWidth + "x" + window.innerHeight,
+    detect: (detectionSeen ? "ok" : "none") + (delegateTried ? "/cpu" : "") + (lastDetectError ? "/err" : ""),
+  };
+  try {
+    const r = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    fbText.value = "";
+    fbModal.classList.remove("open");
+    setStatus("피드백 고마워요! 🐦");
+    setTimeout(() => statusEl.classList.add("hidden"), 1800);
+  } catch (e) {
+    setStatus("전송 실패... 잠시 뒤 다시 시도해주세요 (" + e.message + ")");
+    setTimeout(() => statusEl.classList.add("hidden"), 2500);
+  }
 });
 
 startBtn.addEventListener("click", () => {
