@@ -846,6 +846,80 @@ function drawFriedEgg(c, slot) {
   c.restore();
 }
 
+// ---- 종이 구김 효과: 격자를 삼각형으로 쪼개 흐트러뜨리고 면마다 명암 ----
+const crumpleCanvas = document.createElement("canvas");
+const crumpleCtx = crumpleCanvas.getContext("2d");
+const chash = (n) => {
+  const x = Math.sin(n * 127.1) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// 삼각형 단위 아핀 매핑으로 이미지 조각을 왜곡해서 그림
+function drawWarpTriangle(c, img, s0, s1, s2, d0, d1, d2) {
+  const denom = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+  if (!denom) return;
+  c.save();
+  c.beginPath();
+  c.moveTo(d0.x, d0.y); c.lineTo(d1.x, d1.y); c.lineTo(d2.x, d2.y);
+  c.closePath();
+  c.clip();
+  const a = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / denom;
+  const b = (d0.y * (s1.y - s2.y) + d1.y * (s2.y - s0.y) + d2.y * (s0.y - s1.y)) / denom;
+  const cc = (d0.x * (s2.x - s1.x) + d1.x * (s0.x - s2.x) + d2.x * (s1.x - s0.x)) / denom;
+  const dd = (d0.y * (s2.x - s1.x) + d1.y * (s0.x - s2.x) + d2.y * (s1.x - s0.x)) / denom;
+  const e = (d0.x * (s1.x * s2.y - s2.x * s1.y) + d1.x * (s2.x * s0.y - s0.x * s2.y) + d2.x * (s0.x * s1.y - s1.x * s0.y)) / denom;
+  const f = (d0.y * (s1.x * s2.y - s2.x * s1.y) + d1.y * (s2.x * s0.y - s0.x * s2.y) + d2.y * (s0.x * s1.y - s1.x * s0.y)) / denom;
+  c.transform(a, b, cc, dd, e, f);
+  c.drawImage(img, 0, 0);
+  c.restore();
+}
+
+function drawCrumpledImage(c, img, x, y, w, h, sq, seed) {
+  const GN = 4; // 4x4 격자
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const cx0 = x + w / 2, cy0 = y + h / 2;
+  const verts = [];
+  for (let gy = 0; gy <= GN; gy++) {
+    for (let gx = 0; gx <= GN; gx++) {
+      const n = seed + gy * 47 + gx * 13;
+      const px = x + (gx / GN) * w;
+      const py = y + (gy / GN) * h;
+      verts.push({
+        sx: (gx / GN) * iw,
+        sy: (gy / GN) * ih,
+        // 중심으로 살짝 뭉치면서 + 꼭짓점마다 제멋대로 흔들림
+        x: cx0 + (px - cx0) * (1 - 0.15 * sq) + (chash(n) - 0.5) * (w / GN) * 0.9 * sq,
+        y: cy0 + (py - cy0) * (1 - 0.15 * sq) + (chash(n + 0.5) - 0.5) * (h / GN) * 0.9 * sq,
+      });
+    }
+  }
+  const V = (gx, gy) => verts[gy * (GN + 1) + gx];
+  let ti = 0;
+  for (let gy = 0; gy < GN; gy++) {
+    for (let gx = 0; gx < GN; gx++) {
+      for (const [v0, v1, v2] of [
+        [V(gx, gy), V(gx + 1, gy), V(gx, gy + 1)],
+        [V(gx + 1, gy), V(gx + 1, gy + 1), V(gx, gy + 1)],
+      ]) {
+        drawWarpTriangle(c, img,
+          { x: v0.sx, y: v0.sy }, { x: v1.sx, y: v1.sy }, { x: v2.sx, y: v2.sy },
+          v0, v1, v2);
+        // 접힌 면마다 밝고 어두운 명암을 줘서 종이 구김 느낌
+        const shade = (chash(seed + ti * 7.3) - 0.5) * 0.5 * sq;
+        c.save();
+        c.globalCompositeOperation = "source-atop"; // 이미지 픽셀 위에만 칠해짐
+        c.fillStyle = shade > 0 ? `rgba(255,255,255,${shade})` : `rgba(26,23,18,${-shade})`;
+        c.beginPath();
+        c.moveTo(v0.x, v0.y); c.lineTo(v1.x, v1.y); c.lineTo(v2.x, v2.y);
+        c.closePath();
+        c.fill();
+        c.restore();
+        ti++;
+      }
+    }
+  }
+}
+
 // ---- 등록된 손그림 이미지 드로잉 ----
 function drawCustomImage(pair, slot, part) {
   const img = pair.img;
@@ -863,9 +937,21 @@ function drawCustomImage(pair, slot, part) {
   ctx.rotate(tilt * (1 - sq));
   const shrink = 1 - 0.22 * sq;
   ctx.scale(shrink * (1 + 0.22 * sq), shrink * (1 - 0.28 * sq));
-  ctx.drawImage(img, dx, dy, w, h);
+  if (sq > 0.04) {
+    // 주먹 쥐는 정도만큼 종이처럼 구겨짐. 시드에 시간을 섞어 구김이 꿈틀거림
+    const pad = Math.ceil(Math.max(w, h) * 0.2);
+    const W = Math.ceil(w) + pad * 2, H = Math.ceil(h) + pad * 2;
+    if (crumpleCanvas.width < W) crumpleCanvas.width = W;
+    if (crumpleCanvas.height < H) crumpleCanvas.height = H;
+    crumpleCtx.clearRect(0, 0, crumpleCanvas.width, crumpleCanvas.height);
+    const seed = slot.phase * 37.7 + Math.floor(performance.now() / 250) * 0.618;
+    drawCrumpledImage(crumpleCtx, img, pad, pad, w, h, sq, seed);
+    ctx.drawImage(crumpleCanvas, 0, 0, W, H, dx - pad, dy - pad, W, H);
+  } else {
+    ctx.drawImage(img, dx, dy, w, h);
+  }
   const blinkCycle = (qt * 1000 + slot.phase * 500) % 2700;
-  if (blinkCycle < 130) drawEyesBlink(ctx, pair, dx, dy, w, h);
+  if (blinkCycle < 130 && sq < 0.5) drawEyesBlink(ctx, pair, dx, dy, w, h);
   ctx.restore();
 }
 
