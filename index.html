@@ -245,6 +245,7 @@
 <div id="status" class="hidden"></div>
 <div id="controls">
   <button id="backBtn">← 처음으로</button>
+  <button id="photoBtn">📸 사진</button>
   <button id="recordBtn">● 녹화</button>
 </div>
 
@@ -659,6 +660,7 @@ document.getElementById("drawDone").addEventListener("click", () => {
 startBtn.addEventListener("click", () => {
   setupEl.style.display = "none";
   document.getElementById("controls").style.display = "flex";
+  initAudio(); // 사용자 제스처 시점에 오디오 잠금 해제 (iOS)
   init();
 });
 
@@ -675,10 +677,20 @@ function makeSlots(n) {
     active: false, x: 0, y: 0, size: 0,
     fist: 0, // 0=편 손, 1=주먹 (부드럽게 전환)
     phase: i * 1.7, // 슬롯마다 phase를 다르게 줘서 움직임이 어긋나게
+    // 손바닥용: 등장/퇴장 비행 상태
+    state: "idle", t: 0, missed: 99, detected: false,
+    tx: 0, ty: 0, tsize: 0, sx: 0, sy: 0, ex: 0, ey: 0,
+    flying: false, wasV: false,
+    // 정수리용: 미끄러짐 물리
+    roll: 0, attachX: 0, attachV: 0, yOff: 0, fallV: 0,
+    eggState: "on", respawnAt: 0,
   }));
 }
 const palms = makeSlots(MAX_HANDS);
 const heads = makeSlots(MAX_HEADS);
+let palmCycle = 0; // ✌️ 제스처로 손바닥 그림 순환
+let vToastTimer = null;
+let lastFrameMs = 0;
 
 function updateSlot(slot, tx, ty, tsize) {
   if (slot.size === 0) {
@@ -721,6 +733,25 @@ function drawBird(c, b) {
   c.lineCap = "round";
   c.strokeStyle = "#1a1712";
   c.fillStyle = "#fdf8e4";
+
+  // 날아다닐 때: 파닥이는 날개 (몸통 뒤에 먼저 그림)
+  if (b.flying) {
+    const wa = Math.sin(qt * 26 + b.phase);
+    for (const dir of [-1, 1]) {
+      c.save();
+      c.translate(dir * w * 0.42, -h * 0.06);
+      c.rotate(dir * (-0.4 + wa * 0.55));
+      c.beginPath();
+      c.moveTo(0, 0);
+      c.quadraticCurveTo(dir * w * 0.55, -h * 0.18, dir * w * 0.7, h * 0.02);
+      c.quadraticCurveTo(dir * w * 0.38, h * 0.14, 0, h * 0.07);
+      c.closePath();
+      c.fillStyle = "#fdf8e4";
+      c.fill();
+      c.stroke();
+      c.restore();
+    }
+  }
 
   // 물방울형 몸통
   c.beginPath();
@@ -788,13 +819,15 @@ function drawBird(c, b) {
     }
   }
 
-  // 발
-  c.beginPath();
-  c.moveTo(-w * 0.12, h * 0.40);
-  c.lineTo(-w * 0.12, h * 0.52);
-  c.moveTo( w * 0.12, h * 0.40);
-  c.lineTo( w * 0.12, h * 0.52);
-  c.stroke();
+  // 발 (날 때는 접음)
+  if (!b.flying) {
+    c.beginPath();
+    c.moveTo(-w * 0.12, h * 0.40);
+    c.lineTo(-w * 0.12, h * 0.52);
+    c.moveTo( w * 0.12, h * 0.40);
+    c.lineTo( w * 0.12, h * 0.52);
+    c.stroke();
+  }
 
   c.restore();
 }
@@ -810,7 +843,7 @@ function drawFriedEgg(c, slot) {
   c.save();
   // 흰자 아랫면이 정수리에 살짝 얹히게
   c.translate(slot.x, slot.y + s * 0.15 + bob);
-  c.rotate(tilt);
+  c.rotate(tilt + (slot.extraRot || 0));
 
   c.lineWidth = Math.max(2.5, s * 0.1);
   c.lineJoin = "round";
@@ -934,7 +967,9 @@ function drawCustomImage(pair, slot, part) {
 
   ctx.save();
   ctx.translate(slot.x, slot.y + bob + slot.size * 0.2 * sq);
-  ctx.rotate(tilt * (1 - sq));
+  // 날아다닐 때는 좀 더 크게 흔들리고, 정수리 미끄러짐 회전도 반영
+  const flyWobble = slot.flying ? Math.sin(qt * 20 + slot.phase) * 0.15 : 0;
+  ctx.rotate(tilt * (1 - sq) + (slot.extraRot || 0) + flyWobble);
   const shrink = 1 - 0.22 * sq;
   ctx.scale(shrink * (1 + 0.22 * sq), shrink * (1 - 0.28 * sq));
   if (sq > 0.04) {
@@ -1088,8 +1123,15 @@ async function init() {
   setTimeout(() => statusEl.classList.add("hidden"), 2500);
 
   lastVideoTime = -1;
-  palms.forEach((s) => { s.active = false; s.size = 0; });
-  heads.forEach((s) => { s.active = false; s.size = 0; });
+  lastFrameMs = performance.now();
+  palms.forEach((s) => {
+    s.active = false; s.size = 0; s.state = "idle"; s.missed = 99;
+    s.detected = false; s.fist = 0; s.wasV = false; s.flying = false;
+  });
+  heads.forEach((s) => {
+    s.active = false; s.size = 0; s.roll = 0;
+    s.attachX = 0; s.attachV = 0; s.yOff = 0; s.fallV = 0; s.eggState = "on";
+  });
   running = true;
   requestAnimationFrame(loop);
 }
@@ -1143,23 +1185,43 @@ function loop() {
     const mapX = (nx) => crop.w - (nx * VW - crop.x);
     const mapY = (ny) => ny * VH - crop.y;
 
-    // 손 → 손바닥 슬롯
+    // 손 → 손바닥 슬롯 (등장/퇴장 비행은 아래 상태 머신에서 처리)
     const handResult = handLandmarker.detectForVideo(video, now);
-    palms.forEach((s) => (s.active = false));
+    palms.forEach((s) => (s.detected = false));
     const hands = handResult.landmarks || [];
     for (let i = 0; i < Math.min(hands.length, palms.length); i++) {
       const lm = hands[i];
+      const s = palms[i];
       const wrist = { x: mapX(lm[0].x), y: mapY(lm[0].y) };
       const midRoot = { x: mapX(lm[9].x), y: mapY(lm[9].y) };
       const dist = Math.hypot(midRoot.x - wrist.x, midRoot.y - wrist.y);
-      updateSlot(palms[i], (wrist.x + midRoot.x) / 2, (wrist.y + midRoot.y) / 2, dist * 0.5);
-      // 주먹 판정: 손끝(검지~새끼)이 중간 관절보다 손목에 가까우면 접힌 손가락
+      s.detected = true;
+      s.tx = (wrist.x + midRoot.x) / 2;
+      s.ty = (wrist.y + midRoot.y) / 2;
+      s.tsize = dist * 0.5;
+
+      // 손가락 굽힘: 손끝이 중간 관절보다 손목에 가까우면 접힌 것
       const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
-      let curled = 0;
-      for (const [tip, pip] of [[8, 6], [12, 10], [16, 14], [20, 18]]) {
-        if (d3(lm[tip], lm[0]) < d3(lm[pip], lm[0])) curled++;
+      const folded = [[8, 6], [12, 10], [16, 14], [20, 18]].map(
+        ([tip, pip]) => d3(lm[tip], lm[0]) < d3(lm[pip], lm[0])
+      );
+      const curled = folded.filter(Boolean).length;
+      const prevFist = s.fist;
+      s.fist = lerp(s.fist, curled >= 3 ? 1 : 0, SMOOTH_K);
+      if (prevFist < 0.55 && s.fist >= 0.55) sfxCrunch(); // 구기는 소리
+
+      // ✌️ V 제스처: 검지·중지만 펴면 다음 그림으로 전환
+      const isV = !folded[0] && !folded[1] && folded[2] && folded[3];
+      if (isV && !s.wasV) {
+        const n = pairsFor("palm").length;
+        if (n > 1) {
+          palmCycle++;
+          setStatus(`✌️ 그림 변경 (${(palmCycle % n) + 1}/${n})`);
+          clearTimeout(vToastTimer);
+          vToastTimer = setTimeout(() => statusEl.classList.add("hidden"), 900);
+        }
       }
-      palms[i].fist = lerp(palms[i].fist, curled >= 3 ? 1 : 0, SMOOTH_K);
+      s.wasV = isV;
     }
 
     // 얼굴 → 정수리 슬롯 (박스 좌표는 픽셀 단위)
@@ -1172,26 +1234,178 @@ function loop() {
       // 박스 윗변은 이마 근처라서 실제 정수리(머리카락 위)만큼 위로 올림
       const topY = box.originY - crop.y - box.height * 0.25;
       updateSlot(heads[i], cx, topY, box.width * 0.32);
+      // 고개 기울기(roll): 양쪽 눈 키포인트의 기울기
+      const kp = faces[i].keypoints;
+      if (kp && kp.length >= 2) {
+        const e0 = { x: mapX(kp[0].x), y: mapY(kp[0].y) };
+        const e1 = { x: mapX(kp[1].x), y: mapY(kp[1].y) };
+        let ang = Math.atan2(e1.y - e0.y, e1.x - e0.x);
+        if (ang > Math.PI / 2) ang -= Math.PI;
+        if (ang < -Math.PI / 2) ang += Math.PI;
+        heads[i].roll = lerp(heads[i].roll, ang, 0.3);
+      }
     }
   }
 
+  // ---- 손바닥 새: 등장/퇴장 비행 상태 머신 ----
+  const nowMs = performance.now();
+  const dt = Math.min(0.05, (nowMs - lastFrameMs) / 1000);
+  lastFrameMs = nowMs;
+  const bez = (t, a, c, b) => (1 - t) * (1 - t) * a + 2 * (1 - t) * t * c + t * t * b;
+
   const palmPairs = pairsFor("palm");
   for (const s of palms) {
-    if (!s.active) continue;
+    s.missed = s.detected ? 0 : s.missed + 1;
+    const present = s.detected || s.missed < 8; // 인식이 잠깐 끊겨도 유지
+
+    if (s.state === "idle") {
+      if (s.detected) {
+        // 가까운 쪽 화면 밖에서 날아오기 시작
+        s.state = "arriving"; s.t = 0;
+        s.sx = s.tx < canvas.width / 2 ? -canvas.width * 0.15 : canvas.width * 1.15;
+        s.sy = s.ty * 0.5;
+        s.x = s.sx; s.y = s.sy; s.size = s.tsize;
+      }
+    } else if (s.state === "arriving") {
+      s.t += dt / 0.7;
+      const t = Math.min(1, s.t);
+      const cxp = (s.sx + s.tx) / 2;
+      const cyp = Math.min(s.sy, s.ty) - canvas.height * 0.15;
+      s.x = bez(t, s.sx, cxp, s.tx);
+      s.y = bez(t, s.sy, cyp, s.ty);
+      s.size = lerp(s.size, s.tsize, 0.3);
+      if (t >= 1) { s.state = "landed"; sfxChirp(); }
+      else if (!present) { s.state = "leaving"; s.t = 0; s.sx = s.x; s.sy = s.y; s.ex = s.x < canvas.width / 2 ? -canvas.width * 0.2 : canvas.width * 1.2; s.ey = -canvas.height * 0.2; }
+    } else if (s.state === "landed") {
+      if (present) {
+        if (s.detected) {
+          s.x = lerp(s.x, s.tx, SMOOTH_K);
+          s.y = lerp(s.y, s.ty, SMOOTH_K);
+          s.size = lerp(s.size, s.tsize, SMOOTH_K);
+        }
+      } else {
+        // 손이 사라지면 위로 날아감
+        s.state = "leaving"; s.t = 0; s.sx = s.x; s.sy = s.y;
+        s.ex = s.x < canvas.width / 2 ? -canvas.width * 0.2 : canvas.width * 1.2;
+        s.ey = -canvas.height * 0.2;
+        s.fist = 0;
+      }
+    } else if (s.state === "leaving") {
+      s.t += dt / 0.8;
+      const t = Math.min(1, s.t);
+      const cxp = (s.sx + s.ex) / 2;
+      const cyp = Math.min(s.sy, s.ey) - canvas.height * 0.1;
+      s.x = bez(t, s.sx, cxp, s.ex);
+      s.y = bez(t, s.sy, cyp, s.ey);
+      if (s.detected) { s.state = "arriving"; s.t = 0; s.sx = s.x; s.sy = s.y; } // 다시 나타나면 되돌아옴
+      else if (t >= 1) s.state = "idle";
+    }
+    s.flying = s.state === "arriving" || s.state === "leaving";
+
+    if (s.state === "idle") continue;
     const i = palms.indexOf(s);
-    if (palmPairs.length > 0) drawCustomImage(palmPairs[i % palmPairs.length], s, "palm");
+    if (palmPairs.length > 0) drawCustomImage(palmPairs[(i + palmCycle) % palmPairs.length], s, "palm");
     else drawBird(ctx, s);
   }
 
+  // ---- 정수리: 고개 기울이면 미끄러지다 떨어지고, 잠시 뒤 위에서 새로 떨어짐 ----
   const headPairs = pairsFor("head");
   for (const s of heads) {
     if (!s.active) continue;
+    const f = Math.min(3, dt * 60); // 프레임 정규화 계수
+    if (s.eggState === "gone") {
+      if (nowMs > s.respawnAt) {
+        s.eggState = "dropping";
+        s.attachX = 0; s.attachV = 0; s.fallV = 0;
+        s.yOff = -(s.y + s.size * 3); // 화면 위에서 떨어짐
+      } else continue;
+    }
+    if (s.eggState === "dropping") {
+      s.fallV += s.size * 0.045 * f;
+      s.yOff += s.fallV * f;
+      if (s.yOff >= 0) { s.yOff = 0; s.fallV = 0; s.eggState = "on"; }
+    } else if (s.eggState === "on") {
+      s.attachV += Math.sin(s.roll) * s.size * 0.025 * f;
+      s.attachV *= Math.pow(0.93, f);
+      s.attachX += s.attachV * f;
+      if (Math.abs(s.attachX) > s.size * 1.9) { s.eggState = "falling"; s.fallV = 0; }
+    } else if (s.eggState === "falling") {
+      s.fallV += s.size * 0.05 * f;
+      s.yOff += s.fallV * f;
+      s.attachX += s.attachV * f;
+      if (s.y + s.yOff > canvas.height + s.size * 3) {
+        s.eggState = "gone";
+        s.respawnAt = nowMs + 1800;
+        s.yOff = 0;
+        continue;
+      }
+    }
     const i = heads.indexOf(s);
-    if (headPairs.length > 0) drawCustomImage(headPairs[i % headPairs.length], s, "head");
-    else drawFriedEgg(ctx, s);
+    const ds = Object.assign({}, s, {
+      x: s.x + Math.cos(s.roll) * s.attachX,
+      y: s.y + Math.sin(s.roll) * s.attachX + s.yOff,
+      extraRot: s.roll + s.attachX / (s.size * 4),
+    });
+    if (headPairs.length > 0) drawCustomImage(headPairs[i % headPairs.length], ds, "head");
+    else drawFriedEgg(ctx, ds);
   }
 
   requestAnimationFrame(loop);
+}
+
+// ---- 효과음: WebAudio로 합성 (파일 없음). 녹화에도 섞여 들어감 ----
+let audioCtx = null, sfxGain = null, recDest = null, micConnected = false;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sfxGain = audioCtx.createGain();
+    sfxGain.gain.value = 0.5;
+    sfxGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+// 착지할 때 "짹짹"
+function sfxChirp() {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  for (const [dt, f0, f1] of [[0, 2300, 3300], [0.13, 2700, 3500]]) {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(f0, t0 + dt);
+    o.frequency.exponentialRampToValueAtTime(f1, t0 + dt + 0.07);
+    g.gain.setValueAtTime(0.0001, t0 + dt);
+    g.gain.exponentialRampToValueAtTime(0.4, t0 + dt + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.1);
+    o.connect(g);
+    g.connect(sfxGain);
+    o.start(t0 + dt);
+    o.stop(t0 + dt + 0.12);
+  }
+}
+
+// 주먹 쥘 때 종이 구기는 "빠삭"
+function sfxCrunch() {
+  if (!audioCtx) return;
+  const dur = 0.2;
+  const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * dur), audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) {
+    const env = 1 - i / d.length;
+    d[i] = (Math.random() * 2 - 1) * env * (Math.random() < 0.15 ? 1 : 0.35);
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "bandpass";
+  f.frequency.value = 3200;
+  f.Q.value = 0.6;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.6;
+  src.connect(f); f.connect(g); g.connect(sfxGain);
+  src.start();
 }
 
 // ---- 뒤로 가기: 카메라 끄고 시작 화면으로 ----
@@ -1205,10 +1419,33 @@ document.getElementById("backBtn").addEventListener("click", () => {
   if (micStream) {
     micStream.getTracks().forEach((t) => t.stop());
     micStream = null;
+    micConnected = false;
   }
   document.getElementById("controls").style.display = "none";
   statusEl.classList.add("hidden");
   setupEl.style.display = "flex";
+});
+
+// ---- 📸 사진: 현재 프레임을 찍어서 공유 시트(가능하면) 또는 다운로드 ----
+document.getElementById("photoBtn").addEventListener("click", () => {
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], `hand-bird-${Date.now()}.png`, { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        return;
+      } catch (e) {
+        if (e.name === "AbortError") return; // 사용자가 공유 취소
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }, "image/png");
 });
 
 // ---- 녹화: canvas.captureStream(30) + 마이크 + MediaRecorder ----
@@ -1246,8 +1483,18 @@ recordBtn.addEventListener("click", async () => {
   }
   const mimeType = pickMimeType();
   const stream = canvas.captureStream(30);
+  // 마이크와 효과음을 오디오 그래프에서 한 트랙으로 섞어 녹화에 넣음
+  initAudio();
   const mic = await getMic();
-  if (mic) for (const t of mic.getAudioTracks()) stream.addTrack(t);
+  if (!recDest) {
+    recDest = audioCtx.createMediaStreamDestination();
+    sfxGain.connect(recDest);
+  }
+  if (mic && !micConnected) {
+    audioCtx.createMediaStreamSource(mic).connect(recDest);
+    micConnected = true;
+  }
+  stream.addTrack(recDest.stream.getAudioTracks()[0]);
   try {
     recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   } catch (e) {
