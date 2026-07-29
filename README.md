@@ -5,7 +5,7 @@
 앱 설치 없이 브라우저에서 바로 실행됩니다. 인스타그램 릴스에서 유행하는
 "실사 영상 + 손그림 캐릭터 합성"을 웹에서 실시간으로 만들어보는 프로젝트예요.
 
-**▶ 데모**: https://birds-on-my-hands-production.up.railway.app
+**▶ 데모**: https://bomh.up.railway.app
 
 ## 이런 걸 할 수 있어요
 
