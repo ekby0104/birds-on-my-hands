@@ -736,6 +736,10 @@ document.getElementById("drawDone").addEventListener("click", () => {
 });
 
 // ---- 피드백: 서버 DB(/api/feedback)에 저장. 기기/인식 상태 정보 자동 첨부 ----
+// GitHub Pages 같은 정적 호스팅에는 저장 서버가 없으므로 버튼을 숨김
+if (location.hostname.endsWith("github.io")) {
+  document.getElementById("feedbackBtn").style.display = "none";
+}
 const fbModal = document.getElementById("fbModal");
 const fbText = document.getElementById("fbText");
 document.getElementById("feedbackBtn").addEventListener("click", () => fbModal.classList.add("open"));
