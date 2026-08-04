@@ -148,6 +148,25 @@
     padding: 4px;
     width: auto;
   }
+  #setup > #langBtn {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: auto;
+    max-width: none;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  #drawPartSel {
+    padding: 10px;
+    font-size: 14px;
+    border: 1px solid #111;
+    border-radius: 0;
+    background: #fff;
+    color: #111;
+  }
   #inappWarn {
     border: 1px solid #e5484d;
     color: #e5484d;
@@ -239,24 +258,24 @@
 <body>
 <!-- 시작 화면: 손그림 + 부위 페어 등록 -->
 <div id="setup">
+  <button id="langBtn">EN</button>
   <div id="inappWarn" hidden>
-    카카오톡·인스타 등 앱 안의 브라우저에서는 손 인식이 잘 안 돼요.<br>
+    <span id="inappText">카카오톡·인스타 등 앱 안의 브라우저에서는 손 인식이 잘 안 돼요.</span><br>
     <button id="openExternal">Chrome / 기본 브라우저로 열기</button>
   </div>
   <h1>Birds on<br>My Hands</h1>
-  <p>손바닥을 펴면 새가 날아와 앉는 AR 카메라예요.<br>
+  <p id="introText">손바닥을 펴면 새가 날아와 앉는 AR 카메라예요.<br>
      그냥 시작하면 이 친구들이 나와요 👇</p>
   <div id="defaultRow">
-    <div class="defItem"><canvas id="defBird" width="140" height="140"></canvas><span>손바닥 · 새</span></div>
-    <div class="defItem"><canvas id="defEgg" width="140" height="140"></canvas><span>정수리 · 계란 후라이</span></div>
+    <div class="defItem"><canvas id="defBird" width="140" height="140"></canvas><span id="defBirdLabel">손바닥 · 새</span></div>
+    <div class="defItem"><canvas id="defEgg" width="140" height="140"></canvas><span id="defEggLabel">정수리 · 계란 후라이</span></div>
   </div>
   <button id="startBtn">카메라 시작</button>
-  <div class="secLabel">내 그림으로 바꾸기 · 선택사항</div>
+  <div class="secLabel" id="optLabel">내 그림으로 바꾸기 · 선택사항</div>
   <div id="pairList"></div>
   <button id="addBtn">＋ 손그림 추가 (사진)</button>
   <button id="drawBtn">✏️ 직접 그리기</button>
-  <div id="setupHint">등록하면 기본 캐릭터 대신 내 그림이 나와요 · 부위(손바닥/정수리/눈코입 등)도 고를 수 있어요<br>
-    같은 부위에 여러 장이면 번갈아 등장 · 👁 버튼으로 눈 위치를 지정하면 깜빡여요</div>
+  <div id="setupHint">등록하면 기본 캐릭터 대신 내 그림이 나와요</div>
   <button id="feedbackBtn">💬 피드백 보내기</button>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
 </div>
@@ -279,6 +298,7 @@
   </div>
   <canvas id="drawCanvas" width="640" height="640"></canvas>
   <div id="drawActions">
+    <select id="drawPartSel"></select>
     <button id="drawCancel">취소</button>
     <button id="drawDone">완료 → 등록</button>
   </div>
@@ -286,7 +306,7 @@
 
 <!-- 피드백 모달 -->
 <div id="fbModal">
-  <div class="eyeHint">버그 제보, 아이디어, 감상 뭐든 환영해요!</div>
+  <div class="eyeHint" id="fbHint">버그 제보, 아이디어, 감상 뭐든 환영해요!</div>
   <textarea id="fbText" rows="6" placeholder="예: 갤럭시 크롬에서 새가 안 나와요 / 강아지 스티커도 있으면 좋겠어요"></textarea>
   <div id="fbActions">
     <button id="fbCancel">취소</button>
@@ -296,7 +316,7 @@
 
 <!-- 눈 위치 지정 모달 -->
 <div id="eyeModal">
-  <div class="eyeHint">눈이 있는 곳을 탭하세요 · 다시 탭하면 제거돼요</div>
+  <div class="eyeHint" id="eyeHintText">눈이 있는 곳을 탭하세요 · 다시 탭하면 제거돼요</div>
   <canvas id="eyeCanvas" width="480" height="480"></canvas>
   <div id="eyeActions">
     <button id="eyeClear">전체 지우기</button>
@@ -310,7 +330,8 @@
 <div id="handToast">✋ 카메라에 손바닥을 비춰보세요!</div>
 <div id="controls">
   <button id="backBtn">←</button>
-  <button id="flipBtn">🔄 전환</button>
+  <button id="flipBtn">🔄</button>
+  <button id="drawCamBtn">✏️</button>
   <button id="photoBtn">📸 사진</button>
   <button id="recordBtn">● 녹화</button>
 </div>
@@ -337,6 +358,142 @@ function setStatus(msg, hide = false) {
   statusEl.classList.toggle("hidden", hide);
 }
 
+// ---- 다국어 (한국어/영어) ----
+const I18N = {
+  ko: {
+    intro: "손바닥을 펴면 새가 날아와 앉는 AR 카메라예요.<br>그냥 시작하면 이 친구들이 나와요 👇",
+    defBird: "손바닥 · 새",
+    defEgg: "정수리 · 계란 후라이",
+    start: "카메라 시작",
+    optional: "내 그림으로 바꾸기 · 선택사항",
+    addBtn: "＋ 손그림 추가 (사진)",
+    drawBtn: "✏️ 직접 그리기",
+    hint: "등록하면 기본 캐릭터 대신 내 그림이 나와요 · 부위(손바닥/정수리/눈코입 등)도 고를 수 있어요<br>같은 부위에 여러 장이면 번갈아 등장 · 👁 버튼으로 눈 위치를 지정하면 깜빡여요",
+    feedback: "💬 피드백 보내기",
+    inapp: "카카오톡·인스타 등 앱 안의 브라우저에서는 손 인식이 잘 안 돼요.",
+    openExternal: "Chrome / 기본 브라우저로 열기",
+    parts: { palm: "손바닥 위", head: "정수리 위", eye: "눈 위 (양쪽)", nose: "코 위", mouth: "입 위", cheek: "볼 위 (양쪽)", ear: "귀 위 (양쪽)" },
+    brushes: { pen: "펜", marker: "마커", highlight: "형광펜", crayon: "크레용", spray: "스프레이" },
+    eraser: "지우개",
+    clear: "전체 지우기",
+    cancel: "취소",
+    drawDone: "완료 → 등록",
+    drawAdded: "등록 완료! 화면에 바로 나와요 🎨",
+    eyeHint: "눈이 있는 곳을 탭하세요 · 다시 탭하면 제거돼요",
+    done: "완료",
+    fbHint: "버그 제보, 아이디어, 감상 뭐든 환영해요!",
+    fbPlaceholder: "예: 갤럭시 크롬에서 새가 안 나와요 / 강아지 스티커도 있으면 좋겠어요",
+    fbSend: "보내기",
+    fbThanks: "피드백 고마워요! 🐦",
+    fbFail: "전송 실패... 잠시 뒤 다시 시도해주세요",
+    photo: "📸 사진",
+    record: "● 녹화",
+    stop: "■ 정지",
+    handToast: "✋ 카메라에 손바닥을 비춰보세요!",
+    loadingModel: "모델 로딩 중...",
+    loadFail: "모델 로딩 실패: ",
+    loadingCam: "카메라 켜는 중...",
+    needCam: "카메라 권한이 필요합니다: ",
+    needMic: "마이크 권한이 없어 무음으로 녹화됩니다",
+    noRecord: "이 브라우저는 녹화를 지원하지 않습니다: ",
+    switched: "✌️ 그림 변경",
+    compatTry: "인식이 안 돼서 호환 모드로 전환 중...",
+    compat: "호환 모드로 전환됐어요",
+    flipFail: "카메라 전환 실패: ",
+    copied: "주소를 복사했어요. Safari에 붙여넣어 열어주세요!",
+  },
+  en: {
+    intro: "Open your palm and a hand-drawn bird flies in to sit on it.<br>Just hit start — these friends show up 👇",
+    defBird: "Palm · Bird",
+    defEgg: "Head · Fried egg",
+    start: "Start Camera",
+    optional: "Use your own drawings · optional",
+    addBtn: "＋ Add a drawing (photo)",
+    drawBtn: "✏️ Draw your own",
+    hint: "Your drawing replaces the default character · pick where it goes (palm, head, eyes, nose...)<br>Multiple drawings on one spot take turns · tap 👁 to mark eyes so they blink",
+    feedback: "💬 Send feedback",
+    inapp: "In-app browsers (KakaoTalk, Instagram...) can't run hand tracking well.",
+    openExternal: "Open in Chrome / default browser",
+    parts: { palm: "On palm", head: "On head", eye: "On eyes (both)", nose: "On nose", mouth: "On mouth", cheek: "On cheeks (both)", ear: "On ears (both)" },
+    brushes: { pen: "Pen", marker: "Marker", highlight: "Highlighter", crayon: "Crayon", spray: "Spray" },
+    eraser: "Eraser",
+    clear: "Clear all",
+    cancel: "Cancel",
+    drawDone: "Done → Add",
+    drawAdded: "Added! It shows up right away 🎨",
+    eyeHint: "Tap where the eyes are · tap again to remove",
+    done: "Done",
+    fbHint: "Bugs, ideas, anything — all welcome!",
+    fbPlaceholder: "e.g. The bird doesn't show on my phone / I'd love a puppy sticker",
+    fbSend: "Send",
+    fbThanks: "Thanks for the feedback! 🐦",
+    fbFail: "Failed to send... please try again later",
+    photo: "📸 Photo",
+    record: "● Record",
+    stop: "■ Stop",
+    handToast: "✋ Show your palm to the camera!",
+    loadingModel: "Loading model...",
+    loadFail: "Failed to load model: ",
+    loadingCam: "Starting camera...",
+    needCam: "Camera permission needed: ",
+    needMic: "No mic permission — recording without sound",
+    noRecord: "This browser can't record video: ",
+    switched: "✌️ Drawing switched",
+    compatTry: "Tracking failed — switching to compatibility mode...",
+    compat: "Switched to compatibility mode",
+    flipFail: "Couldn't switch camera: ",
+    copied: "Link copied! Paste it in Safari to open.",
+  },
+};
+let lang = localStorage.getItem("bomh-lang") || ((navigator.language || "").startsWith("ko") ? "ko" : "en");
+const t = (k) => I18N[lang][k];
+
+function fillPartOptions(sel) {
+  const cur = sel.value || "palm";
+  sel.innerHTML = Object.entries(t("parts"))
+    .map(([v, label]) => `<option value="${v}">${label}</option>`)
+    .join("");
+  sel.value = cur;
+}
+
+function applyLang() {
+  localStorage.setItem("bomh-lang", lang);
+  document.documentElement.lang = lang;
+  document.getElementById("langBtn").textContent = lang === "ko" ? "EN" : "한국어";
+  document.getElementById("introText").innerHTML = t("intro");
+  document.getElementById("defBirdLabel").textContent = t("defBird");
+  document.getElementById("defEggLabel").textContent = t("defEgg");
+  startBtn.textContent = t("start");
+  document.getElementById("optLabel").textContent = t("optional");
+  addBtn.textContent = t("addBtn");
+  document.getElementById("drawBtn").textContent = t("drawBtn");
+  document.getElementById("setupHint").innerHTML = t("hint");
+  document.getElementById("feedbackBtn").textContent = t("feedback");
+  document.getElementById("inappText").textContent = t("inapp");
+  document.getElementById("openExternal").textContent = t("openExternal");
+  document.querySelectorAll(".brush").forEach((b) => (b.textContent = t("brushes")[b.dataset.brush]));
+  document.getElementById("eraserBtn").textContent = t("eraser");
+  document.getElementById("clearBtn").textContent = t("clear");
+  document.getElementById("drawCancel").textContent = t("cancel");
+  document.getElementById("drawDone").textContent = t("drawDone");
+  document.getElementById("eyeHintText").textContent = t("eyeHint");
+  document.getElementById("eyeClear").textContent = t("clear");
+  document.getElementById("eyeDone").textContent = t("done");
+  document.getElementById("fbHint").textContent = t("fbHint");
+  document.getElementById("fbText").placeholder = t("fbPlaceholder");
+  document.getElementById("fbCancel").textContent = t("cancel");
+  document.getElementById("fbSend").textContent = t("fbSend");
+  document.getElementById("photoBtn").textContent = t("photo");
+  recordBtn.textContent = recorder && recorder.state === "recording" ? t("stop") : t("record");
+  document.getElementById("handToast").textContent = t("handToast");
+  document.querySelectorAll(".pair select, #drawPartSel").forEach(fillPartOptions);
+}
+
+document.getElementById("langBtn").addEventListener("click", () => {
+  lang = lang === "ko" ? "en" : "ko";
+  applyLang();
+});
+
 // 기기별 문제 진단용: 잡히지 않은 오류를 화면에 표시
 window.addEventListener("error", (e) => setStatus("오류: " + (e.message || e.type)));
 window.addEventListener("unhandledrejection", (e) => setStatus("오류: " + (e.reason?.message || e.reason)));
@@ -358,7 +515,7 @@ if (isInApp) {
     } else {
       // iOS 기타 인앱: 자동으로 못 열어서 주소 복사 안내
       navigator.clipboard?.writeText(location.href);
-      alert("주소를 복사했어요. Safari에 붙여넣어 열어주세요!");
+      alert(t("copied"));
     }
   });
 }
@@ -367,8 +524,8 @@ if (isInApp) {
 // pairs: [{ img: HTMLImageElement, part: 'palm' | 'head' }]
 const pairs = [];
 
-function addPair(img) {
-  const pair = { img, part: "palm", eyes: [] };
+function addPair(img, part = "palm") {
+  const pair = { img, part, eyes: [] };
   pairs.push(pair);
 
   const row = document.createElement("div");
@@ -379,9 +536,8 @@ function addPair(img) {
   thumb.height = 104;
   pair.thumbCtx = thumb.getContext("2d");
   const sel = document.createElement("select");
-  sel.innerHTML = `<option value="palm">손바닥 위</option><option value="head">정수리 위</option>
-    <option value="eye">눈 위 (양쪽)</option><option value="nose">코 위</option><option value="mouth">입 위</option>
-    <option value="cheek">볼 위 (양쪽)</option><option value="ear">귀 위 (양쪽)</option>`;
+  fillPartOptions(sel);
+  sel.value = part;
   sel.addEventListener("change", () => (pair.part = sel.value));
   const eyeBtn = document.createElement("button");
   eyeBtn.className = "del";
@@ -707,11 +863,14 @@ drawCanvas.addEventListener("pointermove", (e) => {
   drawCanvas.addEventListener(ev, () => { drawing = false; strokePts = []; strokeBase = null; })
 );
 
-document.getElementById("drawBtn").addEventListener("click", () => {
+// 시작 화면과 카메라 화면 양쪽에서 그림판을 열 수 있음
+function openDrawPad() {
   dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
   undoStack.length = 0;
   drawModal.classList.add("open");
-});
+}
+document.getElementById("drawBtn").addEventListener("click", openDrawPad);
+document.getElementById("drawCamBtn").addEventListener("click", openDrawPad);
 document.getElementById("drawCancel").addEventListener("click", () => {
   drawModal.classList.remove("open");
 });
@@ -746,7 +905,13 @@ document.getElementById("drawDone").addEventListener("click", () => {
   if (url) {
     const img = new Image();
     img.src = url;
-    img.onload = () => addPair(img);
+    const part = document.getElementById("drawPartSel").value || "palm";
+    img.onload = () => addPair(img, part);
+    // 카메라 화면에서 그렸으면 바로 나온다고 알려줌
+    if (running) {
+      setStatus(t("drawAdded"));
+      setTimeout(() => statusEl.classList.add("hidden"), 1800);
+    }
   }
   drawModal.classList.remove("open");
 });
@@ -778,10 +943,10 @@ document.getElementById("fbSend").addEventListener("click", async () => {
     if (!r.ok) throw new Error("HTTP " + r.status);
     fbText.value = "";
     fbModal.classList.remove("open");
-    setStatus("피드백 고마워요! 🐦");
+    setStatus(t("fbThanks"));
     setTimeout(() => statusEl.classList.add("hidden"), 1800);
   } catch (e) {
-    setStatus("전송 실패... 잠시 뒤 다시 시도해주세요 (" + e.message + ")");
+    setStatus(t("fbFail") + " (" + e.message + ")");
     setTimeout(() => statusEl.classList.add("hidden"), 2500);
   }
 });
@@ -1272,7 +1437,7 @@ function showDiagnosticsIfStuck(err) {
 function maybeFallbackToCpu() {
   if (detectionSeen || delegateTried || performance.now() - detectStartMs < 5000) return;
   delegateTried = true;
-  setStatus("인식이 안 돼서 호환 모드로 전환 중...");
+  setStatus(t("compatTry"));
   (async () => {
     const oldHand = handLandmarker, oldFace = faceDetector;
     handLandmarker = null; // 전환 중에는 감지 건너뜀
@@ -1280,7 +1445,7 @@ function maybeFallbackToCpu() {
     try {
       await createDetectors("CPU");
       detectStartMs = performance.now();
-      setStatus("호환 모드로 전환됐어요", false);
+      setStatus(t("compat"), false);
       setTimeout(() => statusEl.classList.add("hidden"), 1800);
     } catch (e) {
       setStatus("인식 엔진 전환 실패: " + e.message);
@@ -1292,7 +1457,7 @@ function maybeFallbackToCpu() {
 async function init() {
   try {
     if (!handLandmarker) {
-      setStatus("모델 로딩 중...");
+      setStatus(t("loadingModel"));
       try {
         await createDetectors("GPU");
       } catch (e) {
@@ -1301,15 +1466,15 @@ async function init() {
       }
     }
   } catch (e) {
-    setStatus("모델 로딩 실패: " + e.message);
+    setStatus(t("loadFail") + e.message);
     return;
   }
 
   try {
-    setStatus("카메라 켜는 중...");
+    setStatus(t("loadingCam"));
     await openCamera();
   } catch (e) {
-    setStatus("카메라 권한이 필요합니다: " + e.message);
+    setStatus(t("needCam") + e.message);
     return;
   }
 
@@ -1424,7 +1589,7 @@ function loop() {
         const n = pairsFor("palm").length;
         if (n > 1) {
           palmCycle++;
-          setStatus(`✌️ 그림 변경 (${(palmCycle % n) + 1}/${n})`);
+          setStatus(`${t("switched")} (${(palmCycle % n) + 1}/${n})`);
           clearTimeout(vToastTimer);
           vToastTimer = setTimeout(() => statusEl.classList.add("hidden"), 900);
         }
@@ -1748,7 +1913,7 @@ document.getElementById("flipBtn").addEventListener("click", async () => {
   } catch (e) {
     facing = prev; // 실패하면 원래 카메라로 복귀
     try { await openCamera(); } catch (e2) {}
-    setStatus("카메라 전환 실패: " + e.message);
+    setStatus(t("flipFail") + e.message);
     setTimeout(() => statusEl.classList.add("hidden"), 2000);
   }
   flipping = false;
@@ -1805,7 +1970,7 @@ async function getMic() {
   try {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
-    setStatus("마이크 권한이 없어 무음으로 녹화됩니다");
+    setStatus(t("needMic"));
     setTimeout(() => statusEl.classList.add("hidden"), 2500);
   }
   return micStream;
@@ -1845,7 +2010,7 @@ recordBtn.addEventListener("click", async () => {
   try {
     recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   } catch (e) {
-    setStatus("이 브라우저는 녹화를 지원하지 않습니다: " + e.message);
+    setStatus(t("noRecord") + e.message);
     return;
   }
   chunks = [];
@@ -1860,13 +2025,15 @@ recordBtn.addEventListener("click", async () => {
     a.download = `hand-bird-${Date.now()}.${ext}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    recordBtn.textContent = "● 녹화";
+    recordBtn.textContent = t("record");
     recordBtn.classList.remove("recording");
   };
   recorder.start();
-  recordBtn.textContent = "■ 정지";
+  recordBtn.textContent = t("stop");
   recordBtn.classList.add("recording");
 });
+
+applyLang();
 </script>
 </body>
 </html>
