@@ -37,6 +37,25 @@
     transition: opacity 0.4s;
   }
   #status.hidden { opacity: 0; pointer-events: none; }
+  #handToast {
+    position: fixed;
+    top: 16%;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 84vw;
+    background: rgba(255,255,255,0.95);
+    border: 1px solid #111;
+    padding: 16px 24px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #111;
+    text-align: center;
+    z-index: 11;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  #handToast.show { opacity: 1; }
   #controls {
     position: fixed;
     bottom: calc(24px + env(safe-area-inset-bottom));
@@ -292,6 +311,7 @@
 <div id="stage"><canvas id="canvas"></canvas></div>
 <video id="video" playsinline muted autoplay></video>
 <div id="status" class="hidden"></div>
+<div id="handToast">✋ 카메라에 손바닥을 비춰보세요!</div>
 <div id="controls">
   <button id="backBtn">←</button>
   <button id="flipBtn">🔄 전환</button>
@@ -1164,6 +1184,19 @@ let faceDetector = null;
 let lastVideoTime = -1;
 let running = false;
 
+// 카메라 시작 안내 토스트: 손이 처음 인식될 때까지 유지 (최대 12초)
+const handToast = document.getElementById("handToast");
+let handToastTimer = null;
+function showHandToast() {
+  handToast.classList.add("show");
+  clearTimeout(handToastTimer);
+  handToastTimer = setTimeout(() => handToast.classList.remove("show"), 12000);
+}
+function hideHandToast() {
+  handToast.classList.remove("show");
+  clearTimeout(handToastTimer);
+}
+
 // 카메라 열기. iOS는 카메라 모드를 가로 기준(1280x720)으로 고른 뒤 기기 방향에 맞춰
 // 알아서 회전해주므로, 세로 비율을 강제로 요청하면 오히려 가로 영상이 온다.
 // 표준 모드를 요청하고, 세로 화면인데 가로 영상이 오면 브라우저 기본 설정으로 재시도.
@@ -1287,8 +1320,8 @@ async function init() {
   // 좌표 계산은 항상 캔버스 픽셀 기준 (CSS 크기와 다름)
   updateCrop();
 
-  setStatus("손바닥이나 얼굴을 카메라에 보여주세요 ✋", false);
-  setTimeout(() => statusEl.classList.add("hidden"), 2500);
+  statusEl.classList.add("hidden");
+  showHandToast();
 
   lastVideoTime = -1;
   lastFrameMs = performance.now();
@@ -1367,6 +1400,7 @@ function loop() {
     const handResult = handLandmarker.detectForVideo(video, now);
     palms.forEach((s) => (s.detected = false));
     const hands = handResult.landmarks || [];
+    if (hands.length > 0) hideHandToast(); // 손 인식 성공하면 안내 숨김
     for (let i = 0; i < Math.min(hands.length, palms.length); i++) {
       const lm = hands[i];
       const s = palms[i];
@@ -1739,6 +1773,7 @@ document.getElementById("backBtn").addEventListener("click", () => {
   }
   document.getElementById("controls").style.display = "none";
   statusEl.classList.add("hidden");
+  hideHandToast();
   setupEl.style.display = "flex";
 });
 
