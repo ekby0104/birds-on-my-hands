@@ -36,3 +36,7 @@
 얼굴을 실시간 인식하고, Canvas 2D 위에 카메라 영상과 손그림 캐릭터를 매 프레임 합성합니다.
 
 개발·배포 방법과 내부 구조가 궁금하다면 → [DEVELOPMENT.md](DEVELOPMENT.md)
+
+## 후원
+
+재밌게 쓰셨다면 ☕ [커피 한 잔](https://buymeacoffee.com/yuemyname) 어떠세요?

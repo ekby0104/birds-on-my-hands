@@ -148,6 +148,13 @@
     padding: 4px;
     width: auto;
   }
+  #coffeeBtn {
+    color: #aaa;
+    font-size: 13px;
+    text-decoration: underline;
+    text-align: center;
+    padding: 4px;
+  }
   #setup > #langBtn {
     position: absolute;
     top: 18px;
@@ -277,6 +284,7 @@
   <button id="drawBtn">✏️ 직접 그리기</button>
   <div id="setupHint">등록하면 기본 캐릭터 대신 내 그림이 나와요</div>
   <button id="feedbackBtn">💬 피드백 보내기</button>
+  <a id="coffeeBtn" href="https://buymeacoffee.com/yuemyname" target="_blank" rel="noopener">☕ 개발자에게 커피 한 잔</a>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
 </div>
 
@@ -370,6 +378,7 @@ const I18N = {
     drawBtn: "✏️ 직접 그리기",
     hint: "등록하면 기본 캐릭터 대신 내 그림이 나와요 · 부위(손바닥/정수리/눈코입 등)도 고를 수 있어요<br>같은 부위에 여러 장이면 번갈아 등장 · 👁 버튼으로 눈 위치를 지정하면 깜빡여요",
     feedback: "💬 피드백 보내기",
+    coffee: "☕ 개발자에게 커피 한 잔",
     inapp: "카카오톡·인스타 등 앱 안의 브라우저에서는 손 인식이 잘 안 돼요.",
     openExternal: "Chrome / 기본 브라우저로 열기",
     parts: { palm: "손바닥 위", head: "정수리 위", eye: "눈 위 (양쪽)", nose: "코 위", mouth: "입 위", cheek: "볼 위 (양쪽)", ear: "귀 위 (양쪽)" },
@@ -412,6 +421,7 @@ const I18N = {
     drawBtn: "✏️ Draw your own",
     hint: "Your drawing replaces the default character · pick where it goes (palm, head, eyes, nose...)<br>Multiple drawings on one spot take turns · tap 👁 to mark eyes so they blink",
     feedback: "💬 Send feedback",
+    coffee: "☕ Buy me a coffee",
     inapp: "In-app browsers (KakaoTalk, Instagram...) can't run hand tracking well.",
     openExternal: "Open in Chrome / default browser",
     parts: { palm: "On palm", head: "On head", eye: "On eyes (both)", nose: "On nose", mouth: "On mouth", cheek: "On cheeks (both)", ear: "On ears (both)" },
@@ -469,6 +479,7 @@ function applyLang() {
   document.getElementById("drawBtn").textContent = t("drawBtn");
   document.getElementById("setupHint").innerHTML = t("hint");
   document.getElementById("feedbackBtn").textContent = t("feedback");
+  document.getElementById("coffeeBtn").textContent = t("coffee");
   document.getElementById("inappText").textContent = t("inapp");
   document.getElementById("openExternal").textContent = t("openExternal");
   document.querySelectorAll(".brush").forEach((b) => (b.textContent = t("brushes")[b.dataset.brush]));
