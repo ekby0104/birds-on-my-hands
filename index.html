@@ -345,7 +345,16 @@
 </div>
 
 <script type="module">
-import { FilesetResolver, HandLandmarker, FaceDetector } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+// MediaPipe는 카메라 시작 시점에 동적으로 불러옴.
+// 최상단 static import로 두면 CDN 로딩 실패 시 모듈 전체가 실행되지 않아
+// 버튼·언어 토글 같은 UI까지 전부 죽는다.
+let FilesetResolver, HandLandmarker, FaceDetector;
+async function loadVisionLib() {
+  if (FilesetResolver) return;
+  ({ FilesetResolver, HandLandmarker, FaceDetector } = await import(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14"
+  ));
+}
 
 const MAX_HANDS = 4;
 const MAX_HEADS = 4;
@@ -1408,6 +1417,7 @@ let detectionSeen = false;
 let detectStartMs = 0;
 
 async function createDetectors(delegate) {
+  await loadVisionLib();
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
