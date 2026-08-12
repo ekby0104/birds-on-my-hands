@@ -149,12 +149,11 @@
     width: auto;
   }
   #coffeeBtn {
-    color: #aaa;
-    font-size: 13px;
-    text-decoration: underline;
-    text-align: center;
+    display: flex;
+    justify-content: center;
     padding: 4px;
   }
+  #coffeeBtn img { height: 36px; border: 0; }
   #setup > #langBtn {
     position: absolute;
     top: 18px;
@@ -284,7 +283,9 @@
   <button id="drawBtn">✏️ 직접 그리기</button>
   <div id="setupHint">등록하면 기본 캐릭터 대신 내 그림이 나와요</div>
   <button id="feedbackBtn">💬 피드백 보내기</button>
-  <a id="coffeeBtn" href="https://buymeacoffee.com/yuemyname" target="_blank" rel="noopener">☕ 개발자에게 커피 한 잔</a>
+  <a id="coffeeBtn" href="https://ko-fi.com/L4U224X239" target="_blank" rel="noopener">
+    <img id="coffeeImg" height="36" src="https://storage.ko-fi.com/cdn/kofi3.png?v=6"
+         alt="Buy Me a Coffee at ko-fi.com"></a>
   <input type="file" id="fileInput" accept="image/*" multiple hidden>
 </div>
 
@@ -488,7 +489,10 @@ function applyLang() {
   document.getElementById("drawBtn").textContent = t("drawBtn");
   document.getElementById("setupHint").innerHTML = t("hint");
   document.getElementById("feedbackBtn").textContent = t("feedback");
-  document.getElementById("coffeeBtn").textContent = t("coffee");
+  // 이미지 버튼이므로 textContent를 쓰면 이미지가 지워짐 — alt/title만 번역
+  const coffeeImg = document.getElementById("coffeeImg");
+  coffeeImg.alt = t("coffee");
+  coffeeImg.title = t("coffee");
   document.getElementById("inappText").textContent = t("inapp");
   document.getElementById("openExternal").textContent = t("openExternal");
   document.querySelectorAll(".brush").forEach((b) => (b.textContent = t("brushes")[b.dataset.brush]));

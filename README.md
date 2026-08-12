@@ -39,4 +39,4 @@
 
 ## 후원
 
-재밌게 쓰셨다면 ☕ [커피 한 잔](https://buymeacoffee.com/yuemyname) 어떠세요?
+재밌게 쓰셨다면 ☕ [커피 한 잔](https://ko-fi.com/L4U224X239) 어떠세요?
